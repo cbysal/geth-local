@@ -82,7 +82,7 @@ func setId(nodes []*emu.Node) {
 func setAddr(ctx *cli.Context, nodes []*emu.Node) error {
 	for _, node := range nodes {
 		keystorePath := path.Join(ctx.String(utils.DataDirFlag.Name), fmt.Sprintf("emu%06d", node.Identity), "keystore")
-		account, err := keystore.StoreKey(keystorePath, "", keystore.LightScryptN, keystore.LightScryptP)
+		account, err := keystore.StoreKey(keystorePath, "")
 		if err != nil {
 			return err
 		}

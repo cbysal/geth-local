@@ -82,7 +82,7 @@ type unlocked struct {
 // NewKeyStore creates a keystore for the given directory.
 func NewKeyStore(keydir string, scryptN, scryptP int) *KeyStore {
 	keydir, _ = filepath.Abs(keydir)
-	ks := &KeyStore{storage: &keyStorePassphrase{keydir, scryptN, scryptP, false}}
+	ks := &KeyStore{storage: &keyStorePlain{keydir}}
 	ks.init(keydir)
 	return ks
 }
@@ -424,12 +424,7 @@ func (ks *KeyStore) Export(a accounts.Account, passphrase, newPassphrase string)
 	if err != nil {
 		return nil, err
 	}
-	var N, P int
-	if store, ok := ks.storage.(*keyStorePassphrase); ok {
-		N, P = store.scryptN, store.scryptP
-	} else {
-		N, P = StandardScryptN, StandardScryptP
-	}
+	N, P := StandardScryptN, StandardScryptP
 	return EncryptKey(key, newPassphrase, N, P)
 }
 
