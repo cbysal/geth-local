@@ -65,7 +65,6 @@ func (err *AmbiguousAddrError) Error() string {
 // accountCache is a live index of all accounts in the keystore.
 type accountCache struct {
 	keydir   string
-	watcher  *watcher
 	mu       sync.Mutex
 	all      accountsByURL
 	byAddr   map[common.Address][]accounts.Account
@@ -81,7 +80,6 @@ func newAccountCache(keydir string) (*accountCache, chan struct{}) {
 		notify: make(chan struct{}, 1),
 		fileC:  fileCache{all: mapset.NewThreadUnsafeSet[string]()},
 	}
-	ac.watcher = newWatcher(ac)
 	return ac, ac.notify
 }
 
@@ -146,14 +144,6 @@ func (ac *accountCache) deleteByFile(path string) {
 	}
 }
 
-// watcherStarted returns true if the watcher loop started running (even if it
-// has since also ended).
-func (ac *accountCache) watcherStarted() bool {
-	ac.mu.Lock()
-	defer ac.mu.Unlock()
-	return ac.watcher.running || ac.watcher.runEnded
-}
-
 func removeAccount(slice []accounts.Account, elem accounts.Account) []accounts.Account {
 	for i := range slice {
 		if slice[i] == elem {
@@ -202,10 +192,6 @@ func (ac *accountCache) find(a accounts.Account) (accounts.Account, error) {
 func (ac *accountCache) maybeReload() {
 	ac.mu.Lock()
 
-	if ac.watcher.running {
-		ac.mu.Unlock()
-		return // A watcher is running and will keep the cache up-to-date.
-	}
 	if ac.throttle == nil {
 		ac.throttle = time.NewTimer(0)
 	} else {
@@ -217,7 +203,6 @@ func (ac *accountCache) maybeReload() {
 		}
 	}
 	// No watcher running, start it.
-	ac.watcher.start()
 	ac.throttle.Reset(minReloadInterval)
 	ac.mu.Unlock()
 	ac.scanAccounts()
@@ -225,7 +210,6 @@ func (ac *accountCache) maybeReload() {
 
 func (ac *accountCache) close() {
 	ac.mu.Lock()
-	ac.watcher.close()
 	if ac.throttle != nil {
 		ac.throttle.Stop()
 	}

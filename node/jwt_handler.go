@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const jwtExpiryTimeout = 60 * time.Second
@@ -66,8 +66,6 @@ func (handler *jwtHandler) ServeHTTP(out http.ResponseWriter, r *http.Request) {
 		http.Error(out, err.Error(), http.StatusUnauthorized)
 	case !token.Valid:
 		http.Error(out, "invalid token", http.StatusUnauthorized)
-	case !claims.VerifyExpiresAt(time.Now(), false): // optional
-		http.Error(out, "token is expired", http.StatusUnauthorized)
 	case claims.IssuedAt == nil:
 		http.Error(out, "missing issued-at", http.StatusUnauthorized)
 	case time.Since(claims.IssuedAt.Time) > jwtExpiryTimeout:

@@ -48,11 +48,3 @@ func sharedSyslog(fmtr Format, sysWr *syslog.Writer, err error) (Handler, error)
 	})
 	return LazyHandler(&closingHandler{sysWr, h}), nil
 }
-
-func (m muster) SyslogHandler(priority syslog.Priority, tag string, fmtr Format) Handler {
-	return must(SyslogHandler(priority, tag, fmtr))
-}
-
-func (m muster) SyslogNetHandler(net, addr string, priority syslog.Priority, tag string, fmtr Format) Handler {
-	return must(SyslogNetHandler(net, addr, priority, tag, fmtr))
-}
