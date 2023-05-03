@@ -49,7 +49,6 @@ type LocalNode struct {
 
 	id  ID
 	key *ecdsa.PrivateKey
-	db  *DB
 
 	// everything below is protected by a lock
 	mu        sync.RWMutex
@@ -67,10 +66,9 @@ type lnEndpoint struct {
 }
 
 // NewLocalNode creates a local node.
-func NewLocalNode(db *DB, key *ecdsa.PrivateKey) *LocalNode {
+func NewLocalNode(key *ecdsa.PrivateKey) *LocalNode {
 	ln := &LocalNode{
 		id:      PubkeyToIDV4(&key.PublicKey),
-		db:      db,
 		key:     key,
 		entries: make(map[string]enr.Entry),
 		endpoint4: lnEndpoint{
@@ -80,15 +78,9 @@ func NewLocalNode(db *DB, key *ecdsa.PrivateKey) *LocalNode {
 			track: netutil.NewIPTracker(iptrackWindow, iptrackContactWindow, iptrackMinStatements),
 		},
 	}
-	ln.seq = db.localSeq(ln.id)
 	ln.update = time.Now()
 	ln.cur.Store((*Node)(nil))
 	return ln
-}
-
-// Database returns the node database associated with the local node.
-func (ln *LocalNode) Database() *DB {
-	return ln.db
 }
 
 // Node returns the current version of the local node record.
@@ -319,14 +311,4 @@ func (ln *LocalNode) sign() {
 
 func (ln *LocalNode) bumpSeq() {
 	ln.seq++
-	ln.db.storeLocalSeq(ln.id, ln.seq)
-}
-
-// nowMilliseconds gives the current timestamp at millisecond precision.
-func nowMilliseconds() uint64 {
-	ns := time.Now().UnixNano()
-	if ns < 0 {
-		return 0
-	}
-	return uint64(ns / 1000 / 1000)
 }

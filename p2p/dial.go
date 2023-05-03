@@ -41,20 +41,12 @@ const (
 	// Config for the "Looking for peers" message.
 	dialStatsLogInterval = 10 * time.Second // printed at most this often
 	dialStatsPeerLimit   = 3                // but not if more than this many dialed peers
-
-	// Endpoint resolution is throttled with bounded backoff.
-	initialResolveDelay = 60 * time.Second
-	maxResolveDelay     = time.Hour
 )
 
 // NodeDialer is used to connect to nodes in the network, typically by using
 // an underlying net.Dialer but also using net.Pipe in tests.
 type NodeDialer interface {
 	Dial(context.Context, *enode.Node) (net.Conn, error)
-}
-
-type nodeResolver interface {
-	Resolve(*enode.Node) *enode.Node
 }
 
 // tcpDialer implements NodeDialer using real TCP connections.
@@ -70,13 +62,11 @@ func nodeAddr(n *enode.Node) net.Addr {
 	return &net.TCPAddr{IP: n.IP(), Port: n.TCP()}
 }
 
-// checkDial errors:
 var (
 	errSelf             = errors.New("is self")
 	errAlreadyDialing   = errors.New("already dialing")
 	errAlreadyConnected = errors.New("already connected")
 	errRecentlyDialed   = errors.New("recently dialed")
-	errNetRestrict      = errors.New("not contained in netrestrict list")
 	errNoPort           = errors.New("node does not provide TCP port")
 )
 
