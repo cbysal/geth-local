@@ -23,7 +23,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
@@ -36,9 +35,6 @@ func (n *Node) apis() []rpc.API {
 		{
 			Namespace: "admin",
 			Service:   &adminAPI{n},
-		}, {
-			Namespace: "debug",
-			Service:   debug.Handler,
 		}, {
 			Namespace: "web3",
 			Service:   &web3API{n},

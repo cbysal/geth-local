@@ -19,24 +19,16 @@ package debug
 import (
 	"fmt"
 	"io"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
-	"github.com/fjl/memsize/memsizeui"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
-
-var Memsize memsizeui.Handler
 
 var (
 	verbosityFlag = &cli.IntFlag{
@@ -113,44 +105,6 @@ var (
 		Value:    false,
 		Category: flags.LoggingCategory,
 	}
-	pprofFlag = &cli.BoolFlag{
-		Name:     "pprof",
-		Usage:    "Enable the pprof HTTP server",
-		Category: flags.LoggingCategory,
-	}
-	pprofPortFlag = &cli.IntFlag{
-		Name:     "pprof.port",
-		Usage:    "pprof HTTP server listening port",
-		Value:    6060,
-		Category: flags.LoggingCategory,
-	}
-	pprofAddrFlag = &cli.StringFlag{
-		Name:     "pprof.addr",
-		Usage:    "pprof HTTP server listening interface",
-		Value:    "127.0.0.1",
-		Category: flags.LoggingCategory,
-	}
-	memprofilerateFlag = &cli.IntFlag{
-		Name:     "pprof.memprofilerate",
-		Usage:    "Turn on memory profiling with the given rate",
-		Value:    runtime.MemProfileRate,
-		Category: flags.LoggingCategory,
-	}
-	blockprofilerateFlag = &cli.IntFlag{
-		Name:     "pprof.blockprofilerate",
-		Usage:    "Turn on block profiling with the given rate",
-		Category: flags.LoggingCategory,
-	}
-	cpuprofileFlag = &cli.StringFlag{
-		Name:     "pprof.cpuprofile",
-		Usage:    "Write CPU profile to the given file",
-		Category: flags.LoggingCategory,
-	}
-	traceFlag = &cli.StringFlag{
-		Name:     "trace",
-		Usage:    "Write execution trace to the given file",
-		Category: flags.LoggingCategory,
-	}
 )
 
 // Flags holds all command-line flags required for debugging.
@@ -168,18 +122,10 @@ var Flags = []cli.Flag{
 	logMaxBackupsFlag,
 	logMaxAgeFlag,
 	logCompressFlag,
-	pprofFlag,
-	pprofAddrFlag,
-	pprofPortFlag,
-	memprofilerateFlag,
-	blockprofilerateFlag,
-	cpuprofileFlag,
-	traceFlag,
 }
 
 var (
-	glogger         *log.GlogHandler
-	logOutputStream log.Handler
+	glogger *log.GlogHandler
 )
 
 func init() {
@@ -281,67 +227,10 @@ func Setup(ctx *cli.Context) error {
 
 	log.Root().SetHandler(glogger)
 
-	// profiling, tracing
-	runtime.MemProfileRate = memprofilerateFlag.Value
-	if ctx.IsSet(memprofilerateFlag.Name) {
-		runtime.MemProfileRate = ctx.Int(memprofilerateFlag.Name)
-	}
-
-	blockProfileRate := ctx.Int(blockprofilerateFlag.Name)
-	Handler.SetBlockProfileRate(blockProfileRate)
-
-	if traceFile := ctx.String(traceFlag.Name); traceFile != "" {
-		if err := Handler.StartGoTrace(traceFile); err != nil {
-			return err
-		}
-	}
-
-	if cpuFile := ctx.String(cpuprofileFlag.Name); cpuFile != "" {
-		if err := Handler.StartCPUProfile(cpuFile); err != nil {
-			return err
-		}
-	}
-
-	// pprof server
-	if ctx.Bool(pprofFlag.Name) {
-		listenHost := ctx.String(pprofAddrFlag.Name)
-
-		port := ctx.Int(pprofPortFlag.Name)
-
-		address := fmt.Sprintf("%s:%d", listenHost, port)
-		// This context value ("metrics.addr") represents the utils.MetricsHTTPFlag.Name.
-		// It cannot be imported because it will cause a cyclical dependency.
-		StartPProf(address, !ctx.IsSet("metrics.addr"))
-	}
 	if len(logFile) > 0 || rotation {
 		log.Info("Logging configured", context...)
 	}
 	return nil
-}
-
-func StartPProf(address string, withMetrics bool) {
-	// Hook go-metrics into expvar on any /debug/metrics request, load all vars
-	// from the registry into expvar, and execute regular expvar handler.
-	if withMetrics {
-		exp.Exp(metrics.DefaultRegistry)
-	}
-	http.Handle("/memsize/", http.StripPrefix("/memsize", &Memsize))
-	log.Info("Starting pprof server", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
-	go func() {
-		if err := http.ListenAndServe(address, nil); err != nil {
-			log.Error("Failure in running pprof server", "err", err)
-		}
-	}()
-}
-
-// Exit stops all running profiles, flushing their output to the
-// respective file.
-func Exit() {
-	Handler.StopCPUProfile()
-	Handler.StopGoTrace()
-	if closer, ok := logOutputStream.(io.Closer); ok {
-		closer.Close()
-	}
 }
 
 func validateLogLocation(path string) error {

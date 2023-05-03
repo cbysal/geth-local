@@ -23,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/emu"
 	"github.com/ethereum/go-ethereum/eth"
-	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/internal/version"
@@ -83,11 +82,6 @@ func makeFullNode(ctx *cli.Context, emu *emu.Node) (*node.Node, *eth.Ethereum, e
 		cfg.Eth.OverrideShanghai = &v
 	}
 	backend, eth := utils.RegisterEthService(stack, &cfg.Eth)
-
-	// Configure full-sync tester service if requested
-	if ctx.IsSet(utils.SyncTargetFlag.Name) && cfg.Eth.SyncMode == downloader.FullSync {
-		utils.RegisterFullSyncTester(stack, eth, ctx.Path(utils.SyncTargetFlag.Name))
-	}
 	return stack, eth, backend
 }
 
