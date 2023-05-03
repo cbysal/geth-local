@@ -30,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/mclock"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/p2p/netutil"
 )
 
 const (
@@ -128,11 +127,9 @@ type dialScheduler struct {
 type dialSetupFunc func(net.Conn, connFlag, *enode.Node) error
 
 type dialConfig struct {
-	self           enode.ID         // our own ID
-	maxDialPeers   int              // maximum number of dialed peers
-	maxActiveDials int              // maximum number of active dials
-	netRestrict    *netutil.Netlist // IP netrestrict list, disabled if nil
-	resolver       nodeResolver
+	self           enode.ID // our own ID
+	maxDialPeers   int      // maximum number of dialed peers
+	maxActiveDials int      // maximum number of active dials
 	dialer         NodeDialer
 	log            log.Logger
 	clock          mclock.Clock
@@ -387,9 +384,6 @@ func (d *dialScheduler) checkDial(n *enode.Node) error {
 	if _, ok := d.peers[n.ID()]; ok {
 		return errAlreadyConnected
 	}
-	if d.netRestrict != nil && !d.netRestrict.Contains(n.IP()) {
-		return errNetRestrict
-	}
 	if d.history.contains(string(n.ID().Bytes())) {
 		return errRecentlyDialed
 	}
@@ -467,56 +461,15 @@ type dialError struct {
 }
 
 func (t *dialTask) run(d *dialScheduler) {
-	if t.needResolve() && !t.resolve(d) {
+	if t.needResolve() {
 		return
 	}
 
-	err := t.dial(d, t.dest)
-	if err != nil {
-		// For static nodes, resolve one more time if dialing fails.
-		if _, ok := err.(*dialError); ok && t.flags&staticDialedConn != 0 {
-			if t.resolve(d) {
-				t.dial(d, t.dest)
-			}
-		}
-	}
+	t.dial(d, t.dest)
 }
 
 func (t *dialTask) needResolve() bool {
 	return t.flags&staticDialedConn != 0 && t.dest.IP() == nil
-}
-
-// resolve attempts to find the current endpoint for the destination
-// using discovery.
-//
-// Resolve operations are throttled with backoff to avoid flooding the
-// discovery network with useless queries for nodes that don't exist.
-// The backoff delay resets when the node is found.
-func (t *dialTask) resolve(d *dialScheduler) bool {
-	if d.resolver == nil {
-		return false
-	}
-	if t.resolveDelay == 0 {
-		t.resolveDelay = initialResolveDelay
-	}
-	if t.lastResolved > 0 && time.Duration(d.clock.Now()-t.lastResolved) < t.resolveDelay {
-		return false
-	}
-	resolved := d.resolver.Resolve(t.dest)
-	t.lastResolved = d.clock.Now()
-	if resolved == nil {
-		t.resolveDelay *= 2
-		if t.resolveDelay > maxResolveDelay {
-			t.resolveDelay = maxResolveDelay
-		}
-		d.log.Debug("Resolving node failed", "id", t.dest.ID(), "newdelay", t.resolveDelay)
-		return false
-	}
-	// The node was found.
-	t.resolveDelay = initialResolveDelay
-	t.dest = resolved
-	d.log.Debug("Resolved node", "id", t.dest.ID(), "addr", &net.TCPAddr{IP: t.dest.IP(), Port: t.dest.TCP()})
-	return true
 }
 
 // dial performs the actual connection attempt.

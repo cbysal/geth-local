@@ -33,7 +33,6 @@ import (
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/fetcher"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
-	"github.com/ethereum/go-ethereum/eth/protocols/snap"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
@@ -77,23 +76,21 @@ type txPool interface {
 // handlerConfig is the collection of initialization parameters to create a full
 // node network handler.
 type handlerConfig struct {
-	Database       ethdb.Database            // Database for direct sync insertions
-	Chain          *core.BlockChain          // Blockchain to serve data from
-	TxPool         txPool                    // Transaction pool to propagate from
-	Merger         *consensus.Merger         // The manager for eth1/2 transition
-	Network        uint64                    // Network identifier to adfvertise
-	Sync           downloader.SyncMode       // Whether to snap or full sync
-	BloomCache     uint64                    // Megabytes to alloc for snap sync bloom
-	EventMux       *event.TypeMux            // Legacy event mux, deprecate for `feed`
-	Checkpoint     *params.TrustedCheckpoint // Hard coded checkpoint for sync challenges
-	RequiredBlocks map[uint64]common.Hash    // Hard coded map of required block hashes for sync challenges
+	Database   ethdb.Database            // Database for direct sync insertions
+	Chain      *core.BlockChain          // Blockchain to serve data from
+	TxPool     txPool                    // Transaction pool to propagate from
+	Merger     *consensus.Merger         // The manager for eth1/2 transition
+	Network    uint64                    // Network identifier to adfvertise
+	Sync       downloader.SyncMode       // Whether to snap or full sync
+	BloomCache uint64                    // Megabytes to alloc for snap sync bloom
+	EventMux   *event.TypeMux            // Legacy event mux, deprecate for `feed`
+	Checkpoint *params.TrustedCheckpoint // Hard coded checkpoint for sync challenges
 }
 
 type handler struct {
 	networkID  uint64
 	forkFilter forkid.Filter // Fork ID filter, constant across the lifetime of the node
 
-	snapSync  uint32 // Flag whether snap sync is enabled (gets disabled if we already have blocks)
 	acceptTxs uint32 // Flag whether we're considered synchronised (enables transaction processing)
 
 	checkpointNumber uint64      // Block number for the sync progress validator to cross reference
@@ -115,8 +112,6 @@ type handler struct {
 	txsSub        event.Subscription
 	minedBlockSub *event.TypeMuxSubscription
 
-	requiredBlocks map[uint64]common.Hash
-
 	// channels for fetcher, syncer, txsyncLoop
 	quitSync chan struct{}
 
@@ -132,39 +127,15 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		config.EventMux = new(event.TypeMux) // Nicety initialization for tests
 	}
 	h := &handler{
-		networkID:      config.Network,
-		forkFilter:     forkid.NewFilter(config.Chain),
-		eventMux:       config.EventMux,
-		database:       config.Database,
-		txpool:         config.TxPool,
-		chain:          config.Chain,
-		peers:          newPeerSet(),
-		merger:         config.Merger,
-		requiredBlocks: config.RequiredBlocks,
-		quitSync:       make(chan struct{}),
-	}
-	if config.Sync == downloader.FullSync {
-		// The database seems empty as the current block is the genesis. Yet the snap
-		// block is ahead, so snap sync was enabled for this node at a certain point.
-		// The scenarios where this can happen is
-		// * if the user manually (or via a bad block) rolled back a snap sync node
-		//   below the sync point.
-		// * the last snap sync is not finished while user specifies a full sync this
-		//   time. But we don't have any recent state for full sync.
-		// In these cases however it's safe to reenable snap sync.
-		fullBlock, snapBlock := h.chain.CurrentBlock(), h.chain.CurrentSnapBlock()
-		if fullBlock.Number.Uint64() == 0 && snapBlock.Number.Uint64() > 0 {
-			h.snapSync = uint32(1)
-			log.Warn("Switch sync mode from full sync to snap sync")
-		}
-	} else {
-		if h.chain.CurrentBlock().Number.Uint64() > 0 {
-			// Print warning log if database is not empty to run snap sync.
-			log.Warn("Switch sync mode from snap sync to full sync")
-		} else {
-			// If snap sync was requested and our database is empty, grant it
-			h.snapSync = uint32(1)
-		}
+		networkID:  config.Network,
+		forkFilter: forkid.NewFilter(config.Chain),
+		eventMux:   config.EventMux,
+		database:   config.Database,
+		txpool:     config.TxPool,
+		chain:      config.Chain,
+		peers:      newPeerSet(),
+		merger:     config.Merger,
+		quitSync:   make(chan struct{}),
 	}
 	// If we have trusted checkpoints, enforce them on the chain
 	if config.Checkpoint != nil {
@@ -174,12 +145,6 @@ func newHandler(config *handlerConfig) (*handler, error) {
 	// If sync succeeds, pass a callback to potentially disable snap sync mode
 	// and enable transaction propagation.
 	success := func() {
-		// If we were running snap sync and it finished, disable doing another
-		// round on next sync cycle
-		if atomic.LoadUint32(&h.snapSync) == 1 {
-			log.Info("Snap sync complete, auto disabling")
-			atomic.StoreUint32(&h.snapSync, 0)
-		}
 		// If we've successfully finished a sync cycle and passed any required
 		// checkpoint, enable accepting transactions from the network
 		head := h.chain.CurrentBlock()
@@ -254,15 +219,6 @@ func newHandler(config *handlerConfig) (*handler, error) {
 			log.Warn("Unsynced yet, discarded propagated block", "number", blocks[0].Number(), "hash", blocks[0].Hash())
 			return 0, nil
 		}
-		// If snap sync is running, deny importing weird blocks. This is a problematic
-		// clause when starting up a new network, because snap-syncing miners might not
-		// accept each others' blocks until a restart. Unfortunately we haven't figured
-		// out a way yet where nodes can decide unilaterally whether the network is new
-		// or not. This should be fixed if we figure out a solution.
-		if atomic.LoadUint32(&h.snapSync) == 1 {
-			log.Warn("Snap syncing, discarded propagated block", "number", blocks[0].Number(), "hash", blocks[0].Hash())
-			return 0, nil
-		}
 		if h.merger.TDDReached() {
 			// The blocks from the p2p network is regarded as untrusted
 			// after the transition. In theory block gossip should be disabled
@@ -309,13 +265,6 @@ func newHandler(config *handlerConfig) (*handler, error) {
 // runEthPeer registers an eth peer into the joint eth/snap peerset, adds it to
 // various subsystems and starts handling messages.
 func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
-	// If the peer has a `snap` extension, wait for it to connect so we can have
-	// a uniform initialization/teardown mechanism
-	snap, err := h.peers.waitSnapExtension(peer)
-	if err != nil {
-		peer.Log().Error("Snapshot extension barrier failed", "err", err)
-		return err
-	}
 	// TODO(karalabe): Not sure why this is needed
 	if !h.chainSync.handlePeerEvent(peer) {
 		return p2p.DiscQuitting
@@ -336,27 +285,16 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 		peer.Log().Debug("Ethereum handshake failed", "err", err)
 		return err
 	}
-	reject := false // reserved peer slots
-	if atomic.LoadUint32(&h.snapSync) == 1 {
-		if snap == nil {
-			// If we are running snap-sync, we want to reserve roughly half the peer
-			// slots for peers supporting the snap protocol.
-			// The logic here is; we only allow up to 5 more non-snap peers than snap-peers.
-			if all, snp := h.peers.len(), h.peers.snapLen(); all-snp > snp+5 {
-				reject = true
-			}
-		}
-	}
 	// Ignore maxPeers if this is a trusted peer
 	if !peer.Peer.Info().Network.Trusted {
-		if reject || h.peers.len() >= h.maxPeers {
+		if h.peers.len() >= h.maxPeers {
 			return p2p.DiscTooManyPeers
 		}
 	}
 	peer.Log().Debug("Ethereum peer connected", "name", peer.Name())
 
 	// Register the peer locally
-	if err := h.peers.registerPeer(peer, snap); err != nil {
+	if err := h.peers.registerPeer(peer); err != nil {
 		peer.Log().Error("Ethereum peer registration failed", "err", err)
 		return err
 	}
@@ -370,12 +308,6 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 	if err := h.downloader.RegisterPeer(peer.ID(), peer.Version(), peer); err != nil {
 		peer.Log().Error("Failed to register peer in eth syncer", "err", err)
 		return err
-	}
-	if snap != nil {
-		if err := h.downloader.SnapSyncer.Register(snap); err != nil {
-			peer.Log().Error("Failed to register peer in snap syncer", "err", err)
-			return err
-		}
 	}
 	h.chainSync.handlePeerEvent(peer)
 
@@ -408,14 +340,6 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 			case res := <-resCh:
 				headers := ([]*types.Header)(*res.Res.(*eth.BlockHeadersPacket))
 				if len(headers) == 0 {
-					// If we're doing a snap sync, we must enforce the checkpoint
-					// block to avoid eclipse attacks. Unsynced nodes are welcome
-					// to connect after we're done joining the network.
-					if atomic.LoadUint32(&h.snapSync) == 1 {
-						peer.Log().Warn("Dropping unsynced node during sync", "addr", peer.RemoteAddr(), "type", peer.Name())
-						res.Done <- errors.New("unsynced node cannot serve sync")
-						return
-					}
 					res.Done <- nil
 					return
 				}
@@ -439,64 +363,7 @@ func (h *handler) runEthPeer(peer *eth.Peer, handler eth.Handler) error {
 			}
 		}()
 	}
-	// If we have any explicit peer required block hashes, request them
-	for number, hash := range h.requiredBlocks {
-		resCh := make(chan *eth.Response)
-
-		req, err := peer.RequestHeadersByNumber(number, 1, 0, false, resCh)
-		if err != nil {
-			return err
-		}
-		go func(number uint64, hash common.Hash, req *eth.Request) {
-			// Ensure the request gets cancelled in case of error/drop
-			defer req.Close()
-
-			timeout := time.NewTimer(syncChallengeTimeout)
-			defer timeout.Stop()
-
-			select {
-			case res := <-resCh:
-				headers := ([]*types.Header)(*res.Res.(*eth.BlockHeadersPacket))
-				if len(headers) == 0 {
-					// Required blocks are allowed to be missing if the remote
-					// node is not yet synced
-					res.Done <- nil
-					return
-				}
-				// Validate the header and either drop the peer or continue
-				if len(headers) > 1 {
-					res.Done <- errors.New("too many headers in required block response")
-					return
-				}
-				if headers[0].Number.Uint64() != number || headers[0].Hash() != hash {
-					peer.Log().Info("Required block mismatch, dropping peer", "number", number, "hash", headers[0].Hash(), "want", hash)
-					res.Done <- errors.New("required block mismatch")
-					return
-				}
-				peer.Log().Debug("Peer required block verified", "number", number, "hash", hash)
-				res.Done <- nil
-			case <-timeout.C:
-				peer.Log().Warn("Required block challenge timed out, dropping", "addr", peer.RemoteAddr(), "type", peer.Name())
-				h.removePeer(peer.ID())
-			}
-		}(number, hash, req)
-	}
 	// Handle incoming messages until the connection is torn down
-	return handler(peer)
-}
-
-// runSnapExtension registers a `snap` peer into the joint eth/snap peerset and
-// starts handling inbound messages. As `snap` is only a satellite protocol to
-// `eth`, all subsystem registrations and lifecycle management will be done by
-// the main `eth` handler to prevent strange races.
-func (h *handler) runSnapExtension(peer *snap.Peer, handler snap.Handler) error {
-	h.peerWG.Add(1)
-	defer h.peerWG.Done()
-
-	if err := h.peers.registerSnapExtension(peer); err != nil {
-		peer.Log().Warn("Snapshot extension registration failed", "err", err)
-		return err
-	}
 	return handler(peer)
 }
 
@@ -524,13 +391,7 @@ func (h *handler) unregisterPeer(id string) {
 		logger.Error("Ethereum peer removal failed", "err", errPeerNotRegistered)
 		return
 	}
-	// Remove the `eth` peer if it exists
-	logger.Debug("Removing Ethereum peer", "snap", peer.snapExt != nil)
 
-	// Remove the `snap` extension if it exists
-	if peer.snapExt != nil {
-		h.downloader.SnapSyncer.Unregister(id)
-	}
 	h.downloader.UnregisterPeer(id)
 	h.txFetcher.Drop(id)
 
