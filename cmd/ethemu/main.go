@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"sort"
 	"strconv"
@@ -244,6 +246,9 @@ func init() {
 }
 
 func main() {
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
 	if err := app.Run(os.Args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
