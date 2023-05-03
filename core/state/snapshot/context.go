@@ -167,7 +167,6 @@ func (ctx *generatorContext) iterator(kind string) *holdableIterator {
 func (ctx *generatorContext) removeStorageBefore(account common.Hash) {
 	var (
 		count uint64
-		start = time.Now()
 		iter  = ctx.storage
 	)
 	for iter.Next() {
@@ -184,7 +183,6 @@ func (ctx *generatorContext) removeStorageBefore(account common.Hash) {
 		}
 	}
 	ctx.stats.dangling += count
-	snapStorageCleanCounter.Inc(time.Since(start).Nanoseconds())
 }
 
 // removeStorageAt deletes all storage entries which are located in the specified
@@ -194,7 +192,6 @@ func (ctx *generatorContext) removeStorageBefore(account common.Hash) {
 func (ctx *generatorContext) removeStorageAt(account common.Hash) error {
 	var (
 		count int64
-		start = time.Now()
 		iter  = ctx.storage
 	)
 	for iter.Next() {
@@ -214,8 +211,6 @@ func (ctx *generatorContext) removeStorageAt(account common.Hash) error {
 			ctx.batch.Reset()
 		}
 	}
-	snapWipedStorageMeter.Mark(count)
-	snapStorageCleanCounter.Inc(time.Since(start).Nanoseconds())
 	return nil
 }
 
@@ -224,7 +219,6 @@ func (ctx *generatorContext) removeStorageAt(account common.Hash) error {
 func (ctx *generatorContext) removeStorageLeft() {
 	var (
 		count uint64
-		start = time.Now()
 		iter  = ctx.storage
 	)
 	for iter.Next() {
@@ -236,6 +230,4 @@ func (ctx *generatorContext) removeStorageLeft() {
 		}
 	}
 	ctx.stats.dangling += count
-	snapDanglingStorageMeter.Mark(int64(count))
-	snapStorageCleanCounter.Inc(time.Since(start).Nanoseconds())
 }

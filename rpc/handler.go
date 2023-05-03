@@ -455,20 +455,7 @@ func (h *handler) handleCall(cp *callProc, msg *jsonrpcMessage) *jsonrpcMessage 
 	if err != nil {
 		return msg.errorResponse(&invalidParamsError{err.Error()})
 	}
-	start := time.Now()
 	answer := h.runMethod(cp.ctx, msg, callb, args)
-	// Collect the statistics for RPC calls if metrics is enabled.
-	// We only care about pure rpc call. Filter out subscription.
-	if callb != h.unsubscribeCb {
-		rpcRequestGauge.Inc(1)
-		if answer.Error != nil {
-			failedRequestGauge.Inc(1)
-		} else {
-			successfulRequestGauge.Inc(1)
-		}
-		rpcServingTimer.UpdateSince(start)
-		updateServeTimeHistogram(msg.Method, answer.Error == nil, time.Since(start))
-	}
 	return answer
 }
 

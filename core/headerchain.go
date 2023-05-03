@@ -103,7 +103,6 @@ func NewHeaderChain(chainDb ethdb.Database, config *params.ChainConfig, engine c
 		}
 	}
 	hc.currentHeaderHash = hc.CurrentHeader().Hash()
-	headHeaderGauge.Update(hc.CurrentHeader().Number.Int64())
 	return hc, nil
 }
 
@@ -193,7 +192,6 @@ func (hc *HeaderChain) Reorg(headers []*types.Header) error {
 	// Last step update all in-memory head header markers
 	hc.currentHeaderHash = last.Hash()
 	hc.currentHeader.Store(types.CopyHeader(last))
-	headHeaderGauge.Update(last.Number.Int64())
 	return nil
 }
 
@@ -548,7 +546,6 @@ func (hc *HeaderChain) CurrentHeader() *types.Header {
 func (hc *HeaderChain) SetCurrentHeader(head *types.Header) {
 	hc.currentHeader.Store(head)
 	hc.currentHeaderHash = head.Hash()
-	headHeaderGauge.Update(head.Number.Int64())
 }
 
 type (
@@ -634,7 +631,6 @@ func (hc *HeaderChain) setHead(headBlock uint64, headTime uint64, updateFn Updat
 		}
 		hc.currentHeader.Store(parent)
 		hc.currentHeaderHash = parentHash
-		headHeaderGauge.Update(parent.Number.Int64())
 
 		// If this is the first iteration, wipe any leftover data upwards too so
 		// we don't end up with dangling daps in the database

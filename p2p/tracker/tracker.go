@@ -18,31 +18,8 @@ package tracker
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 	"time"
-
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-)
-
-const (
-	// trackedGaugeName is the prefix of the per-packet request tracking.
-	trackedGaugeName = "p2p/tracked"
-
-	// lostMeterName is the prefix of the per-packet request expirations.
-	lostMeterName = "p2p/lost"
-
-	// staleMeterName is the prefix of the per-packet stale responses.
-	staleMeterName = "p2p/stale"
-
-	// waitHistName is the prefix of the per-packet (req only) waiting time histograms.
-	waitHistName = "p2p/wait"
-
-	// maxTrackedPackets is a huge number to act as a failsafe on the number of
-	// pending requests the node will track. It should never be hit unless an
-	// attacker figures out a way to spin requests.
-	maxTrackedPackets = 100000
 )
 
 // request tracks sent network requests which have not yet received a response.
@@ -81,45 +58,6 @@ func New(protocol string, timeout time.Duration) *Tracker {
 	}
 }
 
-// Track adds a network request to the tracker to wait for a response to arrive
-// or until the request it cancelled or times out.
-func (t *Tracker) Track(peer string, version uint, reqCode uint64, resCode uint64, id uint64) {
-	if !metrics.Enabled {
-		return
-	}
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	// If there's a duplicate request, we've just random-collided (or more probably,
-	// we have a bug), report it. We could also add a metric, but we're not really
-	// expecting ourselves to be buggy, so a noisy warning should be enough.
-	if _, ok := t.pending[id]; ok {
-		log.Error("Network request id collision", "protocol", t.protocol, "version", version, "code", reqCode, "id", id)
-		return
-	}
-	// If we have too many pending requests, bail out instead of leaking memory
-	if pending := len(t.pending); pending >= maxTrackedPackets {
-		log.Error("Request tracker exceeded allowance", "pending", pending, "peer", peer, "protocol", t.protocol, "version", version, "code", reqCode)
-		return
-	}
-	// Id doesn't exist yet, start tracking it
-	t.pending[id] = &request{
-		peer:    peer,
-		version: version,
-		reqCode: reqCode,
-		resCode: resCode,
-		time:    time.Now(),
-		expire:  t.expire.PushBack(id),
-	}
-	g := fmt.Sprintf("%s/%s/%d/%#02x", trackedGaugeName, t.protocol, version, reqCode)
-	metrics.GetOrRegisterGauge(g, nil).Inc(1)
-
-	// If we've just inserted the first item, start the expiration timer
-	if t.wake == nil {
-		t.wake = time.AfterFunc(t.timeout, t.clean)
-	}
-}
-
 // clean is called automatically when a preset time passes without a response
 // being delivered for the first network request.
 func (t *Tracker) clean() {
@@ -141,12 +79,6 @@ func (t *Tracker) clean() {
 		// Nope, dead, drop it
 		t.expire.Remove(head)
 		delete(t.pending, id)
-
-		g := fmt.Sprintf("%s/%s/%d/%#02x", trackedGaugeName, t.protocol, req.version, req.reqCode)
-		metrics.GetOrRegisterGauge(g, nil).Dec(1)
-
-		m := fmt.Sprintf("%s/%s/%d/%#02x", lostMeterName, t.protocol, req.version, req.reqCode)
-		metrics.GetOrRegisterMeter(m, nil).Mark(1)
 	}
 	t.schedule()
 }
@@ -159,47 +91,4 @@ func (t *Tracker) schedule() {
 		return
 	}
 	t.wake = time.AfterFunc(time.Until(t.pending[t.expire.Front().Value.(uint64)].time.Add(t.timeout)), t.clean)
-}
-
-// Fulfil fills a pending request, if any is available, reporting on various metrics.
-func (t *Tracker) Fulfil(peer string, version uint, code uint64, id uint64) {
-	if !metrics.Enabled {
-		return
-	}
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	// If it's a non existing request, track as stale response
-	req, ok := t.pending[id]
-	if !ok {
-		m := fmt.Sprintf("%s/%s/%d/%#02x", staleMeterName, t.protocol, version, code)
-		metrics.GetOrRegisterMeter(m, nil).Mark(1)
-		return
-	}
-	// If the response is funky, it might be some active attack
-	if req.peer != peer || req.version != version || req.resCode != code {
-		log.Warn("Network response id collision",
-			"have", fmt.Sprintf("%s:%s/%d:%d", peer, t.protocol, version, code),
-			"want", fmt.Sprintf("%s:%s/%d:%d", peer, t.protocol, req.version, req.resCode),
-		)
-		return
-	}
-	// Everything matches, mark the request serviced and meter it
-	t.expire.Remove(req.expire)
-	delete(t.pending, id)
-	if req.expire.Prev() == nil {
-		if t.wake.Stop() {
-			t.schedule()
-		}
-	}
-	g := fmt.Sprintf("%s/%s/%d/%#02x", trackedGaugeName, t.protocol, req.version, req.reqCode)
-	metrics.GetOrRegisterGauge(g, nil).Dec(1)
-
-	h := fmt.Sprintf("%s/%s/%d/%#02x", waitHistName, t.protocol, req.version, req.reqCode)
-	sampler := func() metrics.Sample {
-		return metrics.ResettingSample(
-			metrics.NewExpDecaySample(1028, 0.015),
-		)
-	}
-	metrics.GetOrRegisterHistogramLazy(h, nil, sampler).Update(time.Since(req.time).Microseconds())
 }

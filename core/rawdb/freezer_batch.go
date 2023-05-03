@@ -195,16 +195,11 @@ func (batch *freezerTableBatch) commit() error {
 	if err != nil {
 		return err
 	}
-	indexSize := int64(len(batch.indexBuffer))
 	batch.indexBuffer = batch.indexBuffer[:0]
 
 	// Update headBytes of table.
 	batch.t.headBytes += dataSize
 	batch.t.items.Store(batch.curItem)
-
-	// Update metrics.
-	batch.t.sizeGauge.Inc(dataSize + indexSize)
-	batch.t.writeMeter.Mark(dataSize + indexSize)
 	return nil
 }
 

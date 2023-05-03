@@ -137,23 +137,6 @@ var (
 		utils.AllowUnprotectedTxs,
 	}
 
-	metricsFlags = []cli.Flag{
-		utils.MetricsEnabledFlag,
-		utils.MetricsEnabledExpensiveFlag,
-		utils.MetricsHTTPFlag,
-		utils.MetricsPortFlag,
-		utils.MetricsEnableInfluxDBFlag,
-		utils.MetricsInfluxDBEndpointFlag,
-		utils.MetricsInfluxDBDatabaseFlag,
-		utils.MetricsInfluxDBUsernameFlag,
-		utils.MetricsInfluxDBPasswordFlag,
-		utils.MetricsInfluxDBTagsFlag,
-		utils.MetricsEnableInfluxDBV2Flag,
-		utils.MetricsInfluxDBTokenFlag,
-		utils.MetricsInfluxDBBucketFlag,
-		utils.MetricsInfluxDBOrganizationFlag,
-	}
-
 	emuFlags = []cli.Flag{
 		utils.ForceFlag,
 		utils.NodesFlag,
@@ -185,7 +168,6 @@ func init() {
 		rpcFlags,
 		consoleFlags,
 		debug.Flags,
-		metricsFlags,
 		emuFlags,
 	)
 

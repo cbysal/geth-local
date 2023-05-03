@@ -546,7 +546,6 @@ func handlePooledTransactions66(backend Backend, msg Decoder, peer *Peer) error 
 		}
 		peer.markTransaction(tx.Hash())
 	}
-	requestTracker.Fulfil(peer.id, peer.version, PooledTransactionsMsg, txs.RequestId)
 
 	return backend.Handle(peer, &txs.PooledTransactionsPacket)
 }

@@ -55,7 +55,7 @@ func (q *headerQueue) updateCapacity(peer *peerConnection, items int, span time.
 // reserve is responsible for allocating a requested number of pending headers
 // from the download queue to the specified peer.
 func (q *headerQueue) reserve(peer *peerConnection, items int) (*fetchRequest, bool, bool) {
-	return q.queue.ReserveHeaders(peer, items), false, false
+	return q.queue.ReserveHeaders(peer), false, false
 }
 
 // unreserve is responsible for removing the current header retrieval allocation

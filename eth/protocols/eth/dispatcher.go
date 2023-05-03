@@ -194,7 +194,6 @@ func (p *Peer) dispatcher() {
 			req := reqOp.req
 			req.Sent = time.Now()
 
-			requestTracker.Track(p.id, p.version, req.code, req.want, req.id)
 			err := p2p.Send(p.rw, req.code, req.data)
 			reqOp.fail <- err
 
@@ -217,9 +216,6 @@ func (p *Peer) dispatcher() {
 		case resOp := <-p.resDispatch:
 			res := resOp.res
 			res.Req = pending[res.id]
-
-			// Independent if the request exists or not, track this packet
-			requestTracker.Fulfil(p.id, p.version, res.code, res.id)
 
 			switch {
 			case res.Req == nil:

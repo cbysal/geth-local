@@ -18,15 +18,13 @@ package txpool
 
 import (
 	"container/heap"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"math"
 	"math/big"
 	"sort"
 	"sync"
 	"sync/atomic"
-	"time"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // nonceHeap is a heap.Interface implementation over 64bit unsigned integers for
@@ -629,7 +627,6 @@ func (l *pricedList) Discard(slots int, force bool) (types.Transactions, bool) {
 func (l *pricedList) Reheap() {
 	l.reheapMu.Lock()
 	defer l.reheapMu.Unlock()
-	start := time.Now()
 	l.stales.Store(0)
 	l.urgent.list = make([]*types.Transaction, 0, l.all.RemoteCount())
 	l.all.Range(func(hash common.Hash, tx *types.Transaction, local bool) bool {
@@ -649,7 +646,6 @@ func (l *pricedList) Reheap() {
 		l.floating.list[i] = heap.Pop(&l.urgent).(*types.Transaction)
 	}
 	heap.Init(&l.floating)
-	reheapTimer.Update(time.Since(start))
 }
 
 // SetBaseFee updates the base fee and triggers a re-heap. Note that Removed is not

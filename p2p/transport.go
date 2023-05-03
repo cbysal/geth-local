@@ -27,7 +27,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/bitutil"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/p2p/rlpx"
 	"github.com/ethereum/go-ethereum/rlp"
 )
@@ -97,11 +96,6 @@ func (t *rlpxTransport) WriteMsg(msg Msg) error {
 
 	// Set metrics.
 	msg.meterSize = size
-	if metrics.Enabled && msg.meterCap.Name != "" { // don't meter non-subprotocol messages
-		m := fmt.Sprintf("%s/%s/%d/%#02x", egressMeterName, msg.meterCap.Name, msg.meterCap.Version, msg.meterCode)
-		metrics.GetOrRegisterMeter(m, nil).Mark(int64(msg.meterSize))
-		metrics.GetOrRegisterMeter(m+"/packets", nil).Mark(1)
-	}
 	return nil
 }
 

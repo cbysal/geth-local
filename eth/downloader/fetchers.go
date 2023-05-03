@@ -29,7 +29,6 @@ import (
 // retrieval to allow blocking API calls.
 func (d *Downloader) fetchHeadersByHash(p *peerConnection, hash common.Hash, amount int, skip int, reverse bool) ([]*types.Header, []common.Hash, error) {
 	// Create the response sink and send the network request
-	start := time.Now()
 	resCh := make(chan *eth.Response)
 
 	req, err := p.peer.RequestHeadersByHash(hash, amount, skip, reverse, resCh)
@@ -51,15 +50,10 @@ func (d *Downloader) fetchHeadersByHash(p *peerConnection, hash common.Hash, amo
 	case <-timeoutTimer.C:
 		// Header retrieval timed out, update the metrics
 		p.log.Debug("Header request timed out", "elapsed", ttl)
-		headerTimeoutMeter.Mark(1)
 
 		return nil, nil, errTimeout
 
 	case res := <-resCh:
-		// Headers successfully retrieved, update the metrics
-		headerReqTimer.Update(time.Since(start))
-		headerInMeter.Mark(int64(len(*res.Res.(*eth.BlockHeadersPacket))))
-
 		// Don't reject the packet even if it turns out to be bad, downloader will
 		// disconnect the peer on its own terms. Simply delivery the headers to
 		// be processed by the caller
@@ -74,7 +68,6 @@ func (d *Downloader) fetchHeadersByHash(p *peerConnection, hash common.Hash, amo
 // retrieval to allow blocking API calls.
 func (d *Downloader) fetchHeadersByNumber(p *peerConnection, number uint64, amount int, skip int, reverse bool) ([]*types.Header, []common.Hash, error) {
 	// Create the response sink and send the network request
-	start := time.Now()
 	resCh := make(chan *eth.Response)
 
 	req, err := p.peer.RequestHeadersByNumber(number, amount, skip, reverse, resCh)
@@ -96,15 +89,10 @@ func (d *Downloader) fetchHeadersByNumber(p *peerConnection, number uint64, amou
 	case <-timeoutTimer.C:
 		// Header retrieval timed out, update the metrics
 		p.log.Debug("Header request timed out", "elapsed", ttl)
-		headerTimeoutMeter.Mark(1)
 
 		return nil, nil, errTimeout
 
 	case res := <-resCh:
-		// Headers successfully retrieved, update the metrics
-		headerReqTimer.Update(time.Since(start))
-		headerInMeter.Mark(int64(len(*res.Res.(*eth.BlockHeadersPacket))))
-
 		// Don't reject the packet even if it turns out to be bad, downloader will
 		// disconnect the peer on its own terms. Simply delivery the headers to
 		// be processed by the caller

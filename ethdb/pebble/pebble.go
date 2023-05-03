@@ -32,7 +32,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 )
 
 const (
@@ -55,20 +54,6 @@ const (
 type Database struct {
 	fn string     // filename for reporting
 	db *pebble.DB // Underlying pebble storage engine
-
-	compTimeMeter       metrics.Meter // Meter for measuring the total time spent in database compaction
-	compReadMeter       metrics.Meter // Meter for measuring the data read during compaction
-	compWriteMeter      metrics.Meter // Meter for measuring the data written during compaction
-	writeDelayNMeter    metrics.Meter // Meter for measuring the write delay number due to database compaction
-	writeDelayMeter     metrics.Meter // Meter for measuring the write delay duration due to database compaction
-	diskSizeGauge       metrics.Gauge // Gauge for tracking the size of all the levels in the database
-	diskReadMeter       metrics.Meter // Meter for measuring the effective amount of data read
-	diskWriteMeter      metrics.Meter // Meter for measuring the effective amount of data written
-	memCompGauge        metrics.Gauge // Gauge for tracking the number of memory compaction
-	level0CompGauge     metrics.Gauge // Gauge for tracking the number of table compaction in level0
-	nonlevel0CompGauge  metrics.Gauge // Gauge for tracking the number of table compaction in non0 level
-	seekCompGauge       metrics.Gauge // Gauge for tracking the number of table compaction caused by read opt
-	manualMemAllocGauge metrics.Gauge // Gauge for tracking amount of non-managed memory currently allocated
 
 	quitLock sync.Mutex      // Mutex protecting the quit channel access
 	quitChan chan chan error // Quit channel to stop the metrics collection before closing the database
@@ -196,20 +181,6 @@ func New(file string, cache int, handles int, namespace string, readonly bool) (
 		return nil, err
 	}
 	db.db = innerDB
-
-	db.compTimeMeter = metrics.NewRegisteredMeter(namespace+"compact/time", nil)
-	db.compReadMeter = metrics.NewRegisteredMeter(namespace+"compact/input", nil)
-	db.compWriteMeter = metrics.NewRegisteredMeter(namespace+"compact/output", nil)
-	db.diskSizeGauge = metrics.NewRegisteredGauge(namespace+"disk/size", nil)
-	db.diskReadMeter = metrics.NewRegisteredMeter(namespace+"disk/read", nil)
-	db.diskWriteMeter = metrics.NewRegisteredMeter(namespace+"disk/write", nil)
-	db.writeDelayMeter = metrics.NewRegisteredMeter(namespace+"compact/writedelay/duration", nil)
-	db.writeDelayNMeter = metrics.NewRegisteredMeter(namespace+"compact/writedelay/counter", nil)
-	db.memCompGauge = metrics.NewRegisteredGauge(namespace+"compact/memory", nil)
-	db.level0CompGauge = metrics.NewRegisteredGauge(namespace+"compact/level0", nil)
-	db.nonlevel0CompGauge = metrics.NewRegisteredGauge(namespace+"compact/nonlevel0", nil)
-	db.seekCompGauge = metrics.NewRegisteredGauge(namespace+"compact/seek", nil)
-	db.manualMemAllocGauge = metrics.NewRegisteredGauge(namespace+"memory/manualalloc", nil)
 
 	// Start up the metrics gathering and return
 	go db.meter(metricsGatheringInterval)
@@ -406,12 +377,10 @@ func (d *Database) meter(refresh time.Duration) {
 			compRead  int64
 			nWrite    int64
 
-			metrics            = d.db.Metrics()
-			compTime           = d.compTime.Load()
-			writeDelayCount    = d.writeDelayCount.Load()
-			writeDelayTime     = d.writeDelayTime.Load()
-			nonLevel0CompCount = int64(d.nonLevel0Comp.Load())
-			level0CompCount    = int64(d.level0Comp.Load())
+			metrics         = d.db.Metrics()
+			compTime        = d.compTime.Load()
+			writeDelayCount = d.writeDelayCount.Load()
+			writeDelayTime  = d.writeDelayTime.Load()
 		)
 		writeDelayTimes[i%2] = writeDelayTime
 		writeDelayCounts[i%2] = writeDelayCount
@@ -429,38 +398,6 @@ func (d *Database) meter(refresh time.Duration) {
 		compWrites[i%2] = compWrite
 		compReads[i%2] = compRead
 		nWrites[i%2] = nWrite
-
-		if d.writeDelayNMeter != nil {
-			d.writeDelayNMeter.Mark(writeDelayCounts[i%2] - writeDelayCounts[(i-1)%2])
-		}
-		if d.writeDelayMeter != nil {
-			d.writeDelayMeter.Mark(writeDelayTimes[i%2] - writeDelayTimes[(i-1)%2])
-		}
-		if d.compTimeMeter != nil {
-			d.compTimeMeter.Mark(compTimes[i%2] - compTimes[(i-1)%2])
-		}
-		if d.compReadMeter != nil {
-			d.compReadMeter.Mark(compReads[i%2] - compReads[(i-1)%2])
-		}
-		if d.compWriteMeter != nil {
-			d.compWriteMeter.Mark(compWrites[i%2] - compWrites[(i-1)%2])
-		}
-		if d.diskSizeGauge != nil {
-			d.diskSizeGauge.Update(int64(metrics.DiskSpaceUsage()))
-		}
-		if d.diskReadMeter != nil {
-			d.diskReadMeter.Mark(0) // pebble doesn't track non-compaction reads
-		}
-		if d.diskWriteMeter != nil {
-			d.diskWriteMeter.Mark(nWrites[i%2] - nWrites[(i-1)%2])
-		}
-		// See https://github.com/cockroachdb/pebble/pull/1628#pullrequestreview-1026664054
-		manuallyAllocated := metrics.BlockCache.Size + int64(metrics.MemTable.Size) + int64(metrics.MemTable.ZombieSize)
-		d.manualMemAllocGauge.Update(manuallyAllocated)
-		d.memCompGauge.Update(metrics.Flush.Count)
-		d.nonlevel0CompGauge.Update(nonLevel0CompCount)
-		d.level0CompGauge.Update(level0CompCount)
-		d.seekCompGauge.Update(metrics.Compact.ReadCount)
 
 		// Sleep a bit, then repeat the stats collection
 		select {

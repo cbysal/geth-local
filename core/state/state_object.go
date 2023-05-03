@@ -19,16 +19,13 @@ package state
 import (
 	"bytes"
 	"fmt"
-	"io"
-	"math/big"
-	"time"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"io"
+	"math/big"
 )
 
 type Code []byte
@@ -187,24 +184,16 @@ func (s *stateObject) GetCommittedState(db Database, key common.Hash) common.Has
 		err error
 	)
 	if s.db.snap != nil {
-		start := time.Now()
 		enc, err = s.db.snap.Storage(s.addrHash, crypto.Keccak256Hash(key.Bytes()))
-		if metrics.EnabledExpensive {
-			s.db.SnapshotStorageReads += time.Since(start)
-		}
 	}
 	// If the snapshot is unavailable or reading from it fails, load from the database.
 	if s.db.snap == nil || err != nil {
-		start := time.Now()
 		tr, err := s.getTrie(db)
 		if err != nil {
 			s.db.setError(err)
 			return common.Hash{}
 		}
 		enc, err = tr.GetStorage(s.address, key.Bytes())
-		if metrics.EnabledExpensive {
-			s.db.StorageReads += time.Since(start)
-		}
 		if err != nil {
 			s.db.setError(err)
 			return common.Hash{}
@@ -268,10 +257,6 @@ func (s *stateObject) updateTrie(db Database) (Trie, error) {
 	s.finalise(false) // Don't prefetch anymore, pull directly if need be
 	if len(s.pendingStorage) == 0 {
 		return s.trie, nil
-	}
-	// Track the amount of time wasted on updating the storage trie
-	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.db.StorageUpdates += time.Since(start) }(time.Now())
 	}
 	// The snapshot storage map for the object
 	var (
@@ -341,10 +326,6 @@ func (s *stateObject) updateRoot(db Database) {
 	if tr == nil {
 		return
 	}
-	// Track the amount of time wasted on hashing the storage trie
-	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.db.StorageHashes += time.Since(start) }(time.Now())
-	}
 	s.data.Root = tr.Hash()
 }
 
@@ -358,10 +339,6 @@ func (s *stateObject) commitTrie(db Database) (*trie.NodeSet, error) {
 	// If nothing changed, don't bother with committing anything
 	if tr == nil {
 		return nil, nil
-	}
-	// Track the amount of time wasted on committing the storage trie
-	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.db.StorageCommits += time.Since(start) }(time.Now())
 	}
 	root, nodes := tr.Commit(false)
 	s.data.Root = root

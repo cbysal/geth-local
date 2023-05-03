@@ -17,11 +17,8 @@
 package p2p
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"io"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/event"
@@ -114,143 +111,6 @@ func Send(w MsgWriter, msgcode uint64, data interface{}) error {
 //	[e1, e2, e3]
 func SendItems(w MsgWriter, msgcode uint64, elems ...interface{}) error {
 	return Send(w, msgcode, elems)
-}
-
-// eofSignal wraps a reader with eof signaling. the eof channel is
-// closed when the wrapped reader returns an error or when count bytes
-// have been read.
-type eofSignal struct {
-	wrapped io.Reader
-	count   uint32 // number of bytes left
-	eof     chan<- struct{}
-}
-
-// note: when using eofSignal to detect whether a message payload
-// has been read, Read might not be called for zero sized messages.
-func (r *eofSignal) Read(buf []byte) (int, error) {
-	if r.count == 0 {
-		if r.eof != nil {
-			r.eof <- struct{}{}
-			r.eof = nil
-		}
-		return 0, io.EOF
-	}
-
-	max := len(buf)
-	if int(r.count) < len(buf) {
-		max = int(r.count)
-	}
-	n, err := r.wrapped.Read(buf[:max])
-	r.count -= uint32(n)
-	if (err != nil || r.count == 0) && r.eof != nil {
-		r.eof <- struct{}{} // tell Peer that msg has been consumed
-		r.eof = nil
-	}
-	return n, err
-}
-
-// MsgPipe creates a message pipe. Reads on one end are matched
-// with writes on the other. The pipe is full-duplex, both ends
-// implement MsgReadWriter.
-func MsgPipe() (*MsgPipeRW, *MsgPipeRW) {
-	var (
-		c1, c2  = make(chan Msg), make(chan Msg)
-		closing = make(chan struct{})
-		closed  = new(int32)
-		rw1     = &MsgPipeRW{c1, c2, closing, closed}
-		rw2     = &MsgPipeRW{c2, c1, closing, closed}
-	)
-	return rw1, rw2
-}
-
-// ErrPipeClosed is returned from pipe operations after the
-// pipe has been closed.
-var ErrPipeClosed = errors.New("p2p: read or write on closed message pipe")
-
-// MsgPipeRW is an endpoint of a MsgReadWriter pipe.
-type MsgPipeRW struct {
-	w       chan<- Msg
-	r       <-chan Msg
-	closing chan struct{}
-	closed  *int32
-}
-
-// WriteMsg sends a message on the pipe.
-// It blocks until the receiver has consumed the message payload.
-func (p *MsgPipeRW) WriteMsg(msg Msg) error {
-	if atomic.LoadInt32(p.closed) == 0 {
-		consumed := make(chan struct{}, 1)
-		msg.Payload = &eofSignal{msg.Payload, msg.Size, consumed}
-		select {
-		case p.w <- msg:
-			if msg.Size > 0 {
-				// wait for payload read or discard
-				select {
-				case <-consumed:
-				case <-p.closing:
-				}
-			}
-			return nil
-		case <-p.closing:
-		}
-	}
-	return ErrPipeClosed
-}
-
-// ReadMsg returns a message sent on the other end of the pipe.
-func (p *MsgPipeRW) ReadMsg() (Msg, error) {
-	if atomic.LoadInt32(p.closed) == 0 {
-		select {
-		case msg := <-p.r:
-			return msg, nil
-		case <-p.closing:
-		}
-	}
-	return Msg{}, ErrPipeClosed
-}
-
-// Close unblocks any pending ReadMsg and WriteMsg calls on both ends
-// of the pipe. They will return ErrPipeClosed. Close also
-// interrupts any reads from a message payload.
-func (p *MsgPipeRW) Close() error {
-	if atomic.AddInt32(p.closed, 1) != 1 {
-		// someone else is already closing
-		atomic.StoreInt32(p.closed, 1) // avoid overflow
-		return nil
-	}
-	close(p.closing)
-	return nil
-}
-
-// ExpectMsg reads a message from r and verifies that its
-// code and encoded RLP content match the provided values.
-// If content is nil, the payload is discarded and not verified.
-func ExpectMsg(r MsgReader, code uint64, content interface{}) error {
-	msg, err := r.ReadMsg()
-	if err != nil {
-		return err
-	}
-	if msg.Code != code {
-		return fmt.Errorf("message code mismatch: got %d, expected %d", msg.Code, code)
-	}
-	if content == nil {
-		return msg.Discard()
-	}
-	contentEnc, err := rlp.EncodeToBytes(content)
-	if err != nil {
-		panic("content encode error: " + err.Error())
-	}
-	if int(msg.Size) != len(contentEnc) {
-		return fmt.Errorf("message size mismatch: got %d, want %d", msg.Size, len(contentEnc))
-	}
-	actualContent, err := io.ReadAll(msg.Payload)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(actualContent, contentEnc) {
-		return fmt.Errorf("message payload mismatch:\ngot:  %x\nwant: %x", actualContent, contentEnc)
-	}
-	return nil
 }
 
 // msgEventer wraps a MsgReadWriter and sends events whenever a message is sent

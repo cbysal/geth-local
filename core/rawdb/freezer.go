@@ -29,7 +29,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/gofrs/flock"
 )
 
@@ -88,12 +87,6 @@ func NewChainFreezer(datadir string, namespace string, readonly bool) (*Freezer,
 // The 'tables' argument defines the data tables. If the value of a map
 // entry is true, snappy compression is disabled for the table.
 func NewFreezer(datadir string, namespace string, readonly bool, maxTableSize uint32, tables map[string]bool) (*Freezer, error) {
-	// Create the initial freezer object
-	var (
-		readMeter  = metrics.NewRegisteredMeter(namespace+"ancient/read", nil)
-		writeMeter = metrics.NewRegisteredMeter(namespace+"ancient/write", nil)
-		sizeGauge  = metrics.NewRegisteredGauge(namespace+"ancient/size", nil)
-	)
 	// Ensure the datadir is not a symbolic link if it exists.
 	if info, err := os.Lstat(datadir); !os.IsNotExist(err) {
 		if info.Mode()&os.ModeSymlink != 0 {
@@ -122,7 +115,7 @@ func NewFreezer(datadir string, namespace string, readonly bool, maxTableSize ui
 
 	// Create the tables.
 	for name, disableSnappy := range tables {
-		table, err := newTable(datadir, name, readMeter, writeMeter, sizeGauge, maxTableSize, disableSnappy, readonly)
+		table, err := newTable(datadir, name, maxTableSize, disableSnappy, readonly)
 		if err != nil {
 			for _, table := range freezer.tables {
 				table.Close()

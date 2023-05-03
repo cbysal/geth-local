@@ -29,7 +29,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/golang/snappy"
 )
 
@@ -111,10 +110,7 @@ type freezerTable struct {
 	headId uint32              // number of the currently active head file
 	tailId uint32              // number of the earliest file
 
-	headBytes  int64         // Number of bytes written to the head file
-	readMeter  metrics.Meter // Meter for measuring the effective amount of data read
-	writeMeter metrics.Meter // Meter for measuring the effective amount of data written
-	sizeGauge  metrics.Gauge // Gauge for tracking the combined size of all freezer tables
+	headBytes int64 // Number of bytes written to the head file
 
 	logger log.Logger   // Logger with database path and table name embedded
 	lock   sync.RWMutex // Mutex protecting the data file descriptors
@@ -122,13 +118,13 @@ type freezerTable struct {
 
 // newFreezerTable opens the given path as a freezer table.
 func newFreezerTable(path, name string, disableSnappy, readonly bool) (*freezerTable, error) {
-	return newTable(path, name, metrics.NilMeter{}, metrics.NilMeter{}, metrics.NilGauge{}, freezerTableSize, disableSnappy, readonly)
+	return newTable(path, name, freezerTableSize, disableSnappy, readonly)
 }
 
 // newTable opens a freezer table, creating the data and index files if they are
 // non-existent. Both files are truncated to the shortest common length to ensure
 // they don't go out of sync.
-func newTable(path string, name string, readMeter metrics.Meter, writeMeter metrics.Meter, sizeGauge metrics.Gauge, maxFilesize uint32, noCompression, readonly bool) (*freezerTable, error) {
+func newTable(path, name string, maxFilesize uint32, noCompression, readonly bool) (*freezerTable, error) {
 	// Ensure the containing directory exists and open the indexEntry file
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return nil, err
@@ -169,9 +165,6 @@ func newTable(path string, name string, readMeter metrics.Meter, writeMeter metr
 		index:         index,
 		meta:          meta,
 		files:         make(map[uint32]*os.File),
-		readMeter:     readMeter,
-		writeMeter:    writeMeter,
-		sizeGauge:     sizeGauge,
 		name:          name,
 		path:          path,
 		logger:        log.New("database", path, "table", name),
@@ -183,13 +176,6 @@ func newTable(path string, name string, readMeter metrics.Meter, writeMeter metr
 		tab.Close()
 		return nil, err
 	}
-	// Initialize the starting size counter
-	size, err := tab.sizeNolock()
-	if err != nil {
-		tab.Close()
-		return nil, err
-	}
-	tab.sizeGauge.Inc(int64(size))
 
 	return tab, nil
 }
@@ -386,11 +372,6 @@ func (t *freezerTable) truncateHead(items uint64) error {
 	if items < t.itemHidden.Load() {
 		return errors.New("truncation below tail")
 	}
-	// We need to truncate, save the old size for metrics tracking
-	oldSize, err := t.sizeNolock()
-	if err != nil {
-		return err
-	}
 	// Something's out of sync, truncate the table's offset index
 	log := t.logger.Debug
 	if existing > items+1 {
@@ -436,13 +417,6 @@ func (t *freezerTable) truncateHead(items uint64) error {
 	// All data files truncated, set internal counters and return
 	t.headBytes = int64(expected.offset)
 	t.items.Store(items)
-
-	// Retrieve the new size and update the total size counter
-	newSize, err := t.sizeNolock()
-	if err != nil {
-		return err
-	}
-	t.sizeGauge.Dec(int64(oldSize - newSize))
 	return nil
 }
 
@@ -488,13 +462,6 @@ func (t *freezerTable) truncateTail(items uint64) error {
 	if t.tailId > newTailId {
 		return fmt.Errorf("invalid index, tail-file %d, item-file %d", t.tailId, newTailId)
 	}
-	// Hidden items exceed the current tail file, drop the relevant
-	// data files. We need to truncate, save the old size for metrics
-	// tracking.
-	oldSize, err := t.sizeNolock()
-	if err != nil {
-		return err
-	}
 	// Count how many items can be deleted from the file.
 	var (
 		newDeleted = items
@@ -517,7 +484,7 @@ func (t *freezerTable) truncateTail(items uint64) error {
 		return err
 	}
 	// Truncate the deleted index entries from the index file.
-	err = copyFrom(t.index.Name(), t.index.Name(), indexEntrySize*(newDeleted-deleted+1), func(f *os.File) error {
+	err := copyFrom(t.index.Name(), t.index.Name(), indexEntrySize*(newDeleted-deleted+1), func(f *os.File) error {
 		tailIndex := indexEntry{
 			filenum: newTailId,
 			offset:  uint32(newDeleted),
@@ -540,13 +507,6 @@ func (t *freezerTable) truncateTail(items uint64) error {
 	t.tailId = newTailId
 	t.itemOffset.Store(newDeleted)
 	t.releaseFilesBefore(t.tailId, true)
-
-	// Retrieve the new size and update the total size counter
-	newSize, err := t.sizeNolock()
-	if err != nil {
-		return err
-	}
-	t.sizeGauge.Dec(int64(oldSize - newSize))
 	return nil
 }
 
@@ -823,9 +783,6 @@ func (t *freezerTable) retrieveItems(start, count, maxBytes uint64) ([]byte, []i
 			break
 		}
 	}
-
-	// Update metrics.
-	t.readMeter.Mark(int64(totalSize))
 	return output[:outputSize], sizes, nil
 }
 

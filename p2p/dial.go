@@ -469,8 +469,7 @@ func (t *dialTask) dial(d *dialScheduler, dest *enode.Node) error {
 		d.log.Trace("Dial error", "id", t.dest.ID(), "addr", nodeAddr(t.dest), "conn", t.flags, "err", cleanupDialErr(err))
 		return &dialError{err}
 	}
-	mfd := newMeteredConn(fd, false, &net.TCPAddr{IP: dest.IP(), Port: dest.TCP()})
-	return d.setupFunc(mfd, t.flags, dest)
+	return d.setupFunc(fd, t.flags, dest)
 }
 
 func (t *dialTask) String() string {

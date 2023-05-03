@@ -181,7 +181,6 @@ func (d *Downloader) concurrentFetch(queue typedQueue, beaconMode bool) error {
 				}
 				if throttle {
 					throttled = true
-					throttleCounter.Inc(1)
 				}
 				if request == nil {
 					continue

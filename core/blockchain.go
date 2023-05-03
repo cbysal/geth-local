@@ -44,47 +44,12 @@ import (
 	"github.com/ethereum/go-ethereum/internal/syncx"
 	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 )
 
 var (
-	headBlockGauge          = metrics.NewRegisteredGauge("chain/head/block", nil)
-	headHeaderGauge         = metrics.NewRegisteredGauge("chain/head/header", nil)
-	headFastBlockGauge      = metrics.NewRegisteredGauge("chain/head/receipt", nil)
-	headFinalizedBlockGauge = metrics.NewRegisteredGauge("chain/head/finalized", nil)
-	headSafeBlockGauge      = metrics.NewRegisteredGauge("chain/head/safe", nil)
-
-	accountReadTimer   = metrics.NewRegisteredTimer("chain/account/reads", nil)
-	accountHashTimer   = metrics.NewRegisteredTimer("chain/account/hashes", nil)
-	accountUpdateTimer = metrics.NewRegisteredTimer("chain/account/updates", nil)
-	accountCommitTimer = metrics.NewRegisteredTimer("chain/account/commits", nil)
-
-	storageReadTimer   = metrics.NewRegisteredTimer("chain/storage/reads", nil)
-	storageHashTimer   = metrics.NewRegisteredTimer("chain/storage/hashes", nil)
-	storageUpdateTimer = metrics.NewRegisteredTimer("chain/storage/updates", nil)
-	storageCommitTimer = metrics.NewRegisteredTimer("chain/storage/commits", nil)
-
-	snapshotAccountReadTimer = metrics.NewRegisteredTimer("chain/snapshot/account/reads", nil)
-	snapshotStorageReadTimer = metrics.NewRegisteredTimer("chain/snapshot/storage/reads", nil)
-	snapshotCommitTimer      = metrics.NewRegisteredTimer("chain/snapshot/commits", nil)
-
-	triedbCommitTimer = metrics.NewRegisteredTimer("chain/triedb/commits", nil)
-
-	blockInsertTimer     = metrics.NewRegisteredTimer("chain/inserts", nil)
-	blockValidationTimer = metrics.NewRegisteredTimer("chain/validation", nil)
-	blockExecutionTimer  = metrics.NewRegisteredTimer("chain/execution", nil)
-	blockWriteTimer      = metrics.NewRegisteredTimer("chain/write", nil)
-
-	blockReorgMeter     = metrics.NewRegisteredMeter("chain/reorg/executes", nil)
-	blockReorgAddMeter  = metrics.NewRegisteredMeter("chain/reorg/add", nil)
-	blockReorgDropMeter = metrics.NewRegisteredMeter("chain/reorg/drop", nil)
-
-	blockPrefetchExecuteTimer   = metrics.NewRegisteredTimer("chain/prefetch/executes", nil)
-	blockPrefetchInterruptMeter = metrics.NewRegisteredMeter("chain/prefetch/interrupts", nil)
-
 	errInsertionInterrupted = errors.New("insertion is interrupted")
 	errChainStopped         = errors.New("blockchain is stopped")
 )
@@ -474,7 +439,6 @@ func (bc *BlockChain) loadLastState() error {
 	}
 	// Everything seems to be fine, set as the head block
 	bc.currentBlock.Store(headBlock.Header())
-	headBlockGauge.Update(int64(headBlock.NumberU64()))
 
 	// Restore the last known head header
 	headHeader := headBlock.Header()
@@ -487,12 +451,10 @@ func (bc *BlockChain) loadLastState() error {
 
 	// Restore the last known head fast block
 	bc.currentSnapBlock.Store(headBlock.Header())
-	headFastBlockGauge.Update(int64(headBlock.NumberU64()))
 
 	if head := rawdb.ReadHeadFastBlockHash(bc.db); head != (common.Hash{}) {
 		if block := bc.GetBlockByHash(head); block != nil {
 			bc.currentSnapBlock.Store(block.Header())
-			headFastBlockGauge.Update(int64(block.NumberU64()))
 		}
 	}
 
@@ -502,9 +464,7 @@ func (bc *BlockChain) loadLastState() error {
 	if head := rawdb.ReadFinalizedBlockHash(bc.db); head != (common.Hash{}) {
 		if block := bc.GetBlockByHash(head); block != nil {
 			bc.currentFinalBlock.Store(block.Header())
-			headFinalizedBlockGauge.Update(int64(block.NumberU64()))
 			bc.currentSafeBlock.Store(block.Header())
-			headSafeBlockGauge.Update(int64(block.NumberU64()))
 		}
 	}
 	// Issue a status log for the user
@@ -581,21 +541,14 @@ func (bc *BlockChain) SetFinalized(header *types.Header) {
 	bc.currentFinalBlock.Store(header)
 	if header != nil {
 		rawdb.WriteFinalizedBlockHash(bc.db, header.Hash())
-		headFinalizedBlockGauge.Update(int64(header.Number.Uint64()))
 	} else {
 		rawdb.WriteFinalizedBlockHash(bc.db, common.Hash{})
-		headFinalizedBlockGauge.Update(0)
 	}
 }
 
 // SetSafe sets the safe block.
 func (bc *BlockChain) SetSafe(header *types.Header) {
 	bc.currentSafeBlock.Store(header)
-	if header != nil {
-		headSafeBlockGauge.Update(int64(header.Number.Uint64()))
-	} else {
-		headSafeBlockGauge.Update(0)
-	}
 }
 
 // setHeadBeyondRoot rewinds the local chain to a new head with the extra condition
@@ -687,7 +640,6 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, time uint64, root common.Ha
 			// last step, however the direction of SetHead is from high
 			// to low, so it's safe to update in-memory markers directly.
 			bc.currentBlock.Store(newHeadBlock.Header())
-			headBlockGauge.Update(int64(newHeadBlock.NumberU64()))
 		}
 		// Rewind the fast block in a simpleton way to the target head
 		if currentSnapBlock := bc.CurrentSnapBlock(); currentSnapBlock != nil && header.Number.Uint64() < currentSnapBlock.Number.Uint64() {
@@ -703,7 +655,6 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, time uint64, root common.Ha
 			// last step, however the direction of SetHead is from high
 			// to low, so it's safe the update in-memory markers directly.
 			bc.currentSnapBlock.Store(newHeadSnapBlock.Header())
-			headFastBlockGauge.Update(int64(newHeadSnapBlock.NumberU64()))
 		}
 		var (
 			headHeader = bc.CurrentBlock()
@@ -793,7 +744,6 @@ func (bc *BlockChain) SnapSyncCommitHead(hash common.Hash) error {
 		return errChainStopped
 	}
 	bc.currentBlock.Store(block.Header())
-	headBlockGauge.Update(int64(block.NumberU64()))
 	bc.chainmu.Unlock()
 
 	// Destroy any existing state snapshot and regenerate it in the background,
@@ -834,11 +784,9 @@ func (bc *BlockChain) ResetWithGenesisBlock(genesis *types.Block) error {
 	// Last update all in-memory chain markers
 	bc.genesisBlock = genesis
 	bc.currentBlock.Store(bc.genesisBlock.Header())
-	headBlockGauge.Update(int64(bc.genesisBlock.NumberU64()))
 	bc.hc.SetGenesis(bc.genesisBlock.Header())
 	bc.hc.SetCurrentHeader(bc.genesisBlock.Header())
 	bc.currentSnapBlock.Store(bc.genesisBlock.Header())
-	headFastBlockGauge.Update(int64(bc.genesisBlock.NumberU64()))
 	return nil
 }
 
@@ -902,10 +850,8 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) {
 	bc.hc.SetCurrentHeader(block.Header())
 
 	bc.currentSnapBlock.Store(block.Header())
-	headFastBlockGauge.Update(int64(block.NumberU64()))
 
 	bc.currentBlock.Store(block.Header())
-	headBlockGauge.Update(int64(block.NumberU64()))
 }
 
 // stopWithoutSaving stops the blockchain service. If any imports are currently in progress
@@ -1086,7 +1032,6 @@ func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain [
 			}
 			rawdb.WriteHeadFastBlockHash(bc.db, head.Hash())
 			bc.currentSnapBlock.Store(head.Header())
-			headFastBlockGauge.Update(int64(head.NumberU64()))
 			return true
 		}
 		return false
@@ -1741,53 +1686,27 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 
 				go func(start time.Time, followup *types.Block, throwaway *state.StateDB) {
 					bc.prefetcher.Prefetch(followup, throwaway, bc.vmConfig, &followupInterrupt)
-
-					blockPrefetchExecuteTimer.Update(time.Since(start))
-					if followupInterrupt.Load() {
-						blockPrefetchInterruptMeter.Mark(1)
-					}
 				}(time.Now(), followup, throwaway)
 			}
 		}
 
 		// Process block using the parent state as reference point
-		pstart := time.Now()
 		receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)
 		if err != nil {
 			bc.reportBlock(block, receipts, err)
 			followupInterrupt.Store(true)
 			return it.index, err
 		}
-		ptime := time.Since(pstart)
 
-		vstart := time.Now()
 		if err := bc.validator.ValidateState(block, statedb, receipts, usedGas); err != nil {
 			bc.reportBlock(block, receipts, err)
 			followupInterrupt.Store(true)
 			return it.index, err
 		}
-		vtime := time.Since(vstart)
 		proctime := time.Since(start) // processing + validation
-
-		// Update the metrics touched during block processing and validation
-		accountReadTimer.Update(statedb.AccountReads)                   // Account reads are complete(in processing)
-		storageReadTimer.Update(statedb.StorageReads)                   // Storage reads are complete(in processing)
-		snapshotAccountReadTimer.Update(statedb.SnapshotAccountReads)   // Account reads are complete(in processing)
-		snapshotStorageReadTimer.Update(statedb.SnapshotStorageReads)   // Storage reads are complete(in processing)
-		accountUpdateTimer.Update(statedb.AccountUpdates)               // Account updates are complete(in validation)
-		storageUpdateTimer.Update(statedb.StorageUpdates)               // Storage updates are complete(in validation)
-		accountHashTimer.Update(statedb.AccountHashes)                  // Account hashes are complete(in validation)
-		storageHashTimer.Update(statedb.StorageHashes)                  // Storage hashes are complete(in validation)
-		triehash := statedb.AccountHashes + statedb.StorageHashes       // The time spent on tries hashing
-		trieUpdate := statedb.AccountUpdates + statedb.StorageUpdates   // The time spent on tries update
-		trieRead := statedb.SnapshotAccountReads + statedb.AccountReads // The time spent on account read
-		trieRead += statedb.SnapshotStorageReads + statedb.StorageReads // The time spent on storage read
-		blockExecutionTimer.Update(ptime - trieRead)                    // The time spent on EVM processing
-		blockValidationTimer.Update(vtime - (triehash + trieUpdate))    // The time spent on block validation
 
 		// Write the block to the chain and get the status.
 		var (
-			wstart = time.Now()
 			status WriteStatus
 		)
 		if !setHead {
@@ -1800,14 +1719,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		if err != nil {
 			return it.index, err
 		}
-		// Update the metrics touched during block commit
-		accountCommitTimer.Update(statedb.AccountCommits)   // Account commits are complete, we can mark them
-		storageCommitTimer.Update(statedb.StorageCommits)   // Storage commits are complete, we can mark them
-		snapshotCommitTimer.Update(statedb.SnapshotCommits) // Snapshot commits are complete, we can mark them
-		triedbCommitTimer.Update(statedb.TrieDBCommits)     // Trie database commits are complete, we can mark them
-
-		blockWriteTimer.Update(time.Since(wstart) - statedb.AccountCommits - statedb.StorageCommits - statedb.SnapshotCommits - statedb.TrieDBCommits)
-		blockInsertTimer.UpdateSince(start)
 
 		// Report the import stats before returning the various results
 		stats.processed++
@@ -2141,14 +2052,10 @@ func (bc *BlockChain) reorg(oldHead *types.Header, newHead *types.Block) error {
 		}
 		logFn(msg, "number", commonBlock.Number(), "hash", commonBlock.Hash(),
 			"drop", len(oldChain), "dropfrom", oldChain[0].Hash(), "add", len(newChain), "addfrom", newChain[0].Hash())
-		blockReorgAddMeter.Mark(int64(len(newChain)))
-		blockReorgDropMeter.Mark(int64(len(oldChain)))
-		blockReorgMeter.Mark(1)
 	} else if len(newChain) > 0 {
 		// Special case happens in the post merge stage that current head is
 		// the ancestor of new head while these two blocks are not consecutive
 		log.Info("Extend chain", "add", len(newChain), "number", newChain[0].Number(), "hash", newChain[0].Hash())
-		blockReorgAddMeter.Mark(int64(len(newChain)))
 	} else {
 		// len(newChain) == 0 && len(oldChain) > 0
 		// rewind the canonical chain to a lower point.

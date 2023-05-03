@@ -166,7 +166,6 @@ func (dl *diskLayer) proveRange(ctx *generatorContext, trieId *trie.ID, prefix [
 		proof    = rawdb.NewMemoryDatabase()
 		diskMore = false
 		iter     = ctx.iterator(kind)
-		start    = time.Now()
 		min      = append(prefix, origin...)
 	)
 	for iter.Next() {
@@ -211,19 +210,6 @@ func (dl *diskLayer) proveRange(ctx *generatorContext, trieId *trie.ID, prefix [
 			}
 		}
 	}
-	// Update metrics for database iteration and merkle proving
-	if kind == snapStorage {
-		snapStorageSnapReadCounter.Inc(time.Since(start).Nanoseconds())
-	} else {
-		snapAccountSnapReadCounter.Inc(time.Since(start).Nanoseconds())
-	}
-	defer func(start time.Time) {
-		if kind == snapStorage {
-			snapStorageProveCounter.Inc(time.Since(start).Nanoseconds())
-		} else {
-			snapAccountProveCounter.Inc(time.Since(start).Nanoseconds())
-		}
-	}(time.Now())
 
 	// The snap state is exhausted, pass the entire key/val set for verification
 	root := trieId.Root
@@ -324,7 +310,6 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 
 	// The range prover says the range is correct, skip trie iteration
 	if result.valid() {
-		snapSuccessfulRangeProofMeter.Mark(1)
 		logger.Trace("Proved state range", "last", hexutil.Encode(last))
 
 		// The verification is passed, process each state with the given
@@ -337,20 +322,7 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 		return !result.diskMore && !result.trieMore, last, nil
 	}
 	logger.Trace("Detected outdated state range", "last", hexutil.Encode(last), "err", result.proofErr)
-	snapFailedRangeProofMeter.Mark(1)
 
-	// Special case, the entire trie is missing. In the original trie scheme,
-	// all the duplicated subtries will be filtered out (only one copy of data
-	// will be stored). While in the snapshot model, all the storage tries
-	// belong to different contracts will be kept even they are duplicated.
-	// Track it to a certain extent remove the noise data used for statistics.
-	if origin == nil && last == nil {
-		meter := snapMissallAccountMeter
-		if kind == snapStorage {
-			meter = snapMissallStorageMeter
-		}
-		meter.Mark(1)
-	}
 	// We use the snap data to build up a cache which can be used by the
 	// main account trie as a primary lookup when resolving hashes
 	var resolver trie.NodeResolver
@@ -392,10 +364,6 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 		updated   = 0 // states updated from the trie
 		deleted   = 0 // states not in trie, but were in snapshot
 		untouched = 0 // states already correct
-
-		// timers
-		start    = time.Now()
-		internal time.Duration
 	)
 	nodeIt.AddResolver(resolver)
 
@@ -410,14 +378,12 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 		for len(kvkeys) > 0 {
 			if cmp := bytes.Compare(kvkeys[0], iter.Key); cmp < 0 {
 				// delete the key
-				istart := time.Now()
 				if err := onState(kvkeys[0], nil, false, true); err != nil {
 					return false, nil, err
 				}
 				kvkeys = kvkeys[1:]
 				kvvals = kvvals[1:]
 				deleted++
-				internal += time.Since(istart)
 				continue
 			} else if cmp == 0 {
 				// the snapshot key can be overwritten
@@ -432,31 +398,21 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 			}
 			break
 		}
-		istart := time.Now()
 		if err := onState(iter.Key, iter.Value, write, false); err != nil {
 			return false, nil, err
 		}
-		internal += time.Since(istart)
 	}
 	if iter.Err != nil {
 		return false, nil, iter.Err
 	}
 	// Delete all stale snapshot states remaining
-	istart := time.Now()
 	for _, key := range kvkeys {
 		if err := onState(key, nil, false, true); err != nil {
 			return false, nil, err
 		}
 		deleted += 1
 	}
-	internal += time.Since(istart)
 
-	// Update metrics for counting trie iteration
-	if kind == snapStorage {
-		snapStorageTrieReadCounter.Inc((time.Since(start) - internal).Nanoseconds())
-	} else {
-		snapAccountTrieReadCounter.Inc((time.Since(start) - internal).Nanoseconds())
-	}
 	logger.Debug("Regenerated state range", "root", trieId.Root, "last", hexutil.Encode(last),
 		"count", count, "created", created, "updated", updated, "untouched", untouched, "deleted", deleted)
 
@@ -510,20 +466,12 @@ func (dl *diskLayer) checkAndFlush(ctx *generatorContext, current []byte) error 
 // It's supposed to restart the generation from the given origin position.
 func generateStorages(ctx *generatorContext, dl *diskLayer, stateRoot common.Hash, account common.Hash, storageRoot common.Hash, storeMarker []byte) error {
 	onStorage := func(key []byte, val []byte, write bool, delete bool) error {
-		defer func(start time.Time) {
-			snapStorageWriteCounter.Inc(time.Since(start).Nanoseconds())
-		}(time.Now())
-
 		if delete {
 			rawdb.DeleteStorageSnapshot(ctx.batch, account, common.BytesToHash(key))
-			snapWipedStorageMeter.Mark(1)
 			return nil
 		}
 		if write {
 			rawdb.WriteStorageSnapshot(ctx.batch, account, common.BytesToHash(key), val)
-			snapGeneratedStorageMeter.Mark(1)
-		} else {
-			snapRecoveredStorageMeter.Mark(1)
 		}
 		ctx.stats.storage += common.StorageSize(1 + 2*common.HashLength + len(val))
 		ctx.stats.slots++
@@ -562,11 +510,8 @@ func generateAccounts(ctx *generatorContext, dl *diskLayer, accMarker []byte) er
 		account := common.BytesToHash(key)
 		ctx.removeStorageBefore(account)
 
-		start := time.Now()
 		if delete {
 			rawdb.DeleteAccountSnapshot(ctx.batch, account)
-			snapWipedAccountMeter.Mark(1)
-			snapAccountWriteCounter.Inc(time.Since(start).Nanoseconds())
 
 			ctx.removeStorageAt(account)
 			return nil
@@ -591,12 +536,10 @@ func generateAccounts(ctx *generatorContext, dl *diskLayer, accMarker []byte) er
 				if acc.Root == types.EmptyRootHash {
 					dataLen -= 32
 				}
-				snapRecoveredAccountMeter.Mark(1)
 			} else {
 				data := SlimAccountRLP(acc.Nonce, acc.Balance, acc.Root, acc.CodeHash)
 				dataLen = len(data)
 				rawdb.WriteAccountSnapshot(ctx.batch, account, data)
-				snapGeneratedAccountMeter.Mark(1)
 			}
 			ctx.stats.storage += common.StorageSize(1 + common.HashLength + dataLen)
 			ctx.stats.accounts++
@@ -611,7 +554,6 @@ func generateAccounts(ctx *generatorContext, dl *diskLayer, accMarker []byte) er
 		if err := dl.checkAndFlush(ctx, marker); err != nil {
 			return err
 		}
-		snapAccountWriteCounter.Inc(time.Since(start).Nanoseconds()) // let's count flush time as well
 
 		// If the iterated account is the contract, create a further loop to
 		// verify or regenerate the contract storage.
