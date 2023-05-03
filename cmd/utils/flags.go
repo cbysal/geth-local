@@ -1035,7 +1035,7 @@ Please note that --` + MetricsHTTPFlag.Name + ` must be set to start the server.
 	BlockTimeFlag = &cli.IntFlag{
 		Name:     "block.time",
 		Usage:    "Interval of consensus for blocks",
-		Value:    30,
+		Value:    3,
 		Category: flags.EmuCategory,
 	}
 )

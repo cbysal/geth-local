@@ -385,7 +385,7 @@ func ethemu(ctx *cli.Context) error {
 			if err != nil {
 				return
 			}
-			timer := time.NewTimer(time.Duration(10000+rand.Intn(5000)) * time.Millisecond)
+			timer := time.NewTimer(time.Duration(emu.Global.Period) * time.Second)
 			select {
 			case <-stopSig:
 				return
