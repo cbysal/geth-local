@@ -82,21 +82,19 @@ func initGenesis(ctx *cli.Context) error {
 		stack, _ := makeConfigNode(ctx, node)
 		defer stack.Close()
 
-		for _, name := range []string{"chaindata", "lightchaindata"} {
-			chaindb, err := stack.OpenDatabaseWithFreezer(name, 0, 0, ctx.String(utils.AncientFlag.Name), "", false)
-			if err != nil {
-				utils.Fatalf("Failed to open database: %v", err)
-			}
-			triedb := trie.NewDatabaseWithConfig(chaindb, &trie.Config{
-				Preimages: ctx.Bool(utils.CachePreimagesFlag.Name),
-			})
-			_, hash, err := core.SetupGenesisBlock(chaindb, triedb, genesis)
-			if err != nil {
-				utils.Fatalf("Failed to write genesis block: %v", err)
-			}
-			chaindb.Close()
-			log.Info("Successfully wrote genesis state", "database", name, "hash", hash)
+		chaindb, err := stack.OpenDatabase("chaindata", 0, 0, "", false)
+		if err != nil {
+			utils.Fatalf("Failed to open database: %v", err)
 		}
+		triedb := trie.NewDatabaseWithConfig(chaindb, &trie.Config{
+			Preimages: ctx.Bool(utils.CachePreimagesFlag.Name),
+		})
+		_, hash, err := core.SetupGenesisBlock(chaindb, triedb, genesis)
+		if err != nil {
+			utils.Fatalf("Failed to write genesis block: %v", err)
+		}
+		chaindb.Close()
+		log.Info("Successfully wrote genesis state", "hash", hash)
 	}
 	return nil
 }
