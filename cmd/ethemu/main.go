@@ -232,6 +232,7 @@ func init() {
 		consoleFlags,
 		debug.Flags,
 		metricsFlags,
+		emuFlags,
 	)
 
 	app.Before = func(ctx *cli.Context) error {
