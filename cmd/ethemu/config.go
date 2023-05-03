@@ -17,12 +17,7 @@
 package main
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
-	"os"
-	"reflect"
-	"unicode"
 
 	"github.com/urfave/cli/v2"
 
@@ -36,69 +31,17 @@ import (
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
-	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/naoina/toml"
 )
-
-var (
-	configFileFlag = &cli.StringFlag{
-		Name:     "config",
-		Usage:    "TOML configuration file",
-		Category: flags.EthCategory,
-	}
-)
-
-// These settings ensure that TOML keys use the same names as Go struct fields.
-var tomlSettings = toml.Config{
-	NormFieldName: func(rt reflect.Type, key string) string {
-		return key
-	},
-	FieldToKey: func(rt reflect.Type, field string) string {
-		return field
-	},
-	MissingField: func(rt reflect.Type, field string) error {
-		id := fmt.Sprintf("%s.%s", rt.String(), field)
-		if deprecated(id) {
-			log.Warn("Config field is deprecated and won't have an effect", "name", id)
-			return nil
-		}
-		var link string
-		if unicode.IsUpper(rune(rt.Name()[0])) && rt.PkgPath() != "main" {
-			link = fmt.Sprintf(", see https://godoc.org/%s#%s for available fields", rt.PkgPath(), rt.Name())
-		}
-		return fmt.Errorf("field '%s' is not defined in %s%s", field, rt.String(), link)
-	},
-}
-
-type ethstatsConfig struct {
-	URL string `toml:",omitempty"`
-}
 
 type gethConfig struct {
-	Eth      ethconfig.Config
-	Node     node.Config
-	Ethstats ethstatsConfig
-	Metrics  metrics.Config
-}
-
-func loadConfig(file string, cfg *gethConfig) error {
-	f, err := os.Open(file)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	err = tomlSettings.NewDecoder(bufio.NewReader(f)).Decode(cfg)
-	// Add file name to errors that have a line number.
-	if _, ok := err.(*toml.LineError); ok {
-		err = errors.New(file + ", " + err.Error())
-	}
-	return err
+	Eth     ethconfig.Config
+	Node    node.Config
+	Metrics metrics.Config
 }
 
 func defaultNodeConfig() node.Config {
@@ -121,13 +64,6 @@ func makeConfigNode(ctx *cli.Context, emu *emu.Node) (*node.Node, gethConfig) {
 		Metrics: metrics.DefaultConfig,
 	}
 
-	// Load config file.
-	if file := ctx.String(configFileFlag.Name); file != "" {
-		if err := loadConfig(file, &cfg); err != nil {
-			utils.Fatalf("%v", err)
-		}
-	}
-
 	// Apply flags.
 	utils.SetNodeConfig(ctx, &cfg.Node, emu)
 	stack, err := node.New(&cfg.Node)
@@ -140,9 +76,6 @@ func makeConfigNode(ctx *cli.Context, emu *emu.Node) (*node.Node, gethConfig) {
 	}
 
 	utils.SetEthConfig(ctx, stack, &cfg.Eth, emu)
-	if ctx.IsSet(utils.EthStatsURLFlag.Name) {
-		cfg.Ethstats.URL = ctx.String(utils.EthStatsURLFlag.Name)
-	}
 	applyMetricConfig(ctx, &cfg)
 
 	return stack, cfg
@@ -156,11 +89,6 @@ func makeFullNode(ctx *cli.Context, emu *emu.Node) (*node.Node, *eth.Ethereum, e
 		cfg.Eth.OverrideShanghai = &v
 	}
 	backend, eth := utils.RegisterEthService(stack, &cfg.Eth)
-
-	// Add the Ethereum Stats daemon if requested.
-	if cfg.Ethstats.URL != "" {
-		utils.RegisterEthStatsService(stack, backend, cfg.Ethstats.URL)
-	}
 
 	// Configure full-sync tester service if requested
 	if ctx.IsSet(utils.SyncTargetFlag.Name) && cfg.Eth.SyncMode == downloader.FullSync {
@@ -211,17 +139,6 @@ func applyMetricConfig(ctx *cli.Context, cfg *gethConfig) {
 	}
 	if ctx.IsSet(utils.MetricsInfluxDBOrganizationFlag.Name) {
 		cfg.Metrics.InfluxDBOrganization = ctx.String(utils.MetricsInfluxDBOrganizationFlag.Name)
-	}
-}
-
-func deprecated(field string) bool {
-	switch field {
-	case "ethconfig.Config.EVMInterpreter":
-		return true
-	case "ethconfig.Config.EWASMInterpreter":
-		return true
-	default:
-		return false
 	}
 }
 
