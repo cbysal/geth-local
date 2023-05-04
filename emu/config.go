@@ -15,13 +15,10 @@ const CONFIG_JSON = "config.json"
 var ErrAddrNotFound = errors.New("Address not found!")
 
 type Config struct {
-	Period        uint64
-	MinTxInterval uint64
-	MaxTxInterval uint64
-	Nodes         map[common.Address]*Node
-	Latency       uint64
-	Bandwidth     uint64
-	BlockSize     uint64
+	Nodes     map[common.Address]*Node
+	Latency   uint64
+	Bandwidth uint64
+	BlockSize uint64
 }
 
 var Global Config

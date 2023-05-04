@@ -140,16 +140,11 @@ var (
 	emuFlags = []cli.Flag{
 		utils.ForceFlag,
 		utils.NodesFlag,
-		utils.MinersFlag,
-		utils.MinPeerFlag,
-		utils.MaxPeerFlag,
-		utils.MinTxFlag,
-		utils.MaxTxFlag,
-		utils.BlockTimeFlag,
 		utils.LatencyFlag,
 		utils.BandwidthFlag,
 		utils.TxModeFlag,
 		utils.BlockSizeFlag,
+		utils.PeerNumFlag,
 	}
 )
 
@@ -236,7 +231,6 @@ func ethemu(ctx *cli.Context) error {
 			for addr := range emu.Global.Nodes {
 				sealers = append(sealers, eths[addr])
 			}
-			sleepMin, sleepMax := emu.Global.MinTxInterval, emu.Global.MaxTxInterval
 			addrs := make([]common.Address, 0, len(emu.Global.Nodes)-1)
 			for _, node := range emu.Global.Nodes {
 				addrs = append(addrs, node.Address)
@@ -250,12 +244,11 @@ func ethemu(ctx *cli.Context) error {
 				}
 				value := big.NewInt(int64(txNum))
 				tx := ethapi.TransactionArgs{From: &from, To: &to, Value: (*hexutil.Big)(value)}
-				timer := time.NewTimer(time.Duration(rand.Intn(int(sleepMax-sleepMin))+int(sleepMin)) * time.Millisecond)
 				var hash common.Hash
 				select {
 				case <-stopSig:
 					return
-				case <-timer.C:
+				default:
 					hash, _ = eths[from].SendTransaction(context.Background(), tx)
 				}
 				for {

@@ -607,42 +607,6 @@ var (
 		Value:    30,
 		Category: flags.EmuCategory,
 	}
-	MinersFlag = &cli.IntFlag{
-		Name:     "miners",
-		Usage:    "Number of emulated miners",
-		Value:    5,
-		Category: flags.EmuCategory,
-	}
-	MinPeerFlag = &cli.IntFlag{
-		Name:     "peer.min",
-		Usage:    "Restrict the minimum peer num for each node",
-		Value:    20,
-		Category: flags.EmuCategory,
-	}
-	MaxPeerFlag = &cli.IntFlag{
-		Name:     "peer.max",
-		Usage:    "Restrict the maximum peer num for each node",
-		Value:    50,
-		Category: flags.EmuCategory,
-	}
-	MinTxFlag = &cli.IntFlag{
-		Name:     "tx.min",
-		Usage:    "Restrict the minimum transaction num sent during each block time",
-		Value:    150,
-		Category: flags.EmuCategory,
-	}
-	MaxTxFlag = &cli.IntFlag{
-		Name:     "tx.max",
-		Usage:    "Restrict the maximum transaction num sent during each block time",
-		Value:    500,
-		Category: flags.EmuCategory,
-	}
-	BlockTimeFlag = &cli.IntFlag{
-		Name:     "block.time",
-		Usage:    "Interval of consensus for blocks",
-		Value:    3,
-		Category: flags.EmuCategory,
-	}
 	LatencyFlag = &cli.IntFlag{
 		Name:     "latency",
 		Usage:    "Latency of the network",
@@ -664,6 +628,12 @@ var (
 		Name:     "block.size",
 		Usage:    "Size of blocks",
 		Value:    1024,
+		Category: flags.EmuCategory,
+	}
+	PeerNumFlag = &cli.IntFlag{
+		Name:     "peers",
+		Usage:    "Average peer number of a node",
+		Value:    20,
 		Category: flags.EmuCategory,
 	}
 )

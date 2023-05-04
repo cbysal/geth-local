@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	mrand "math/rand"
+	"golang.org/x/exp/rand"
+	"math"
 	"os"
 	"path"
 
-	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
@@ -51,9 +51,6 @@ func generateConfig(ctx *cli.Context) error {
 	}
 	setPeers(ctx, nodes)
 
-	emu.Global.Period = uint64(ctx.Int(utils.BlockTimeFlag.Name))
-	emu.Global.MinTxInterval = emu.Global.Period * 1000 / uint64(ctx.Int(utils.MaxTxFlag.Name))
-	emu.Global.MaxTxInterval = emu.Global.Period * 1000 / uint64(ctx.Int(utils.MinTxFlag.Name))
 	emu.Global.Latency = uint64(ctx.Int(utils.LatencyFlag.Name))
 	emu.Global.Bandwidth = uint64(ctx.Int(utils.BandwidthFlag.Name))
 	emu.Global.BlockSize = uint64(ctx.Int(utils.BlockSizeFlag.Name))
@@ -83,36 +80,24 @@ func setAddr(ctx *cli.Context, nodes []*emu.Node) error {
 }
 
 func setPeers(ctx *cli.Context, nodes []*emu.Node) {
-	minPeer := ctx.Int(utils.MinPeerFlag.Name)
-	maxPeer := ctx.Int(utils.MaxPeerFlag.Name)
-	peers := make([]mapset.Set[int], len(nodes))
-	for i := range nodes {
-		peers[i] = mapset.NewSet[int]()
-	}
-	check := func() bool {
-		for _, node := range peers {
-			if size := node.Cardinality(); size < minPeer || size > maxPeer {
-				return false
-			}
+	getPij := func(dens float64, prop float64, maxDis, i, j int) float64 {
+		dis := int(math.Abs(float64(i - j)))
+		theta := 0
+		if dens-math.Min(float64(dis), float64(len(nodes)-dis))/float64(maxDis) >= 0 {
+			theta = 1
 		}
-		return true
+		return prop*dens + (1-prop)*float64(theta)
 	}
-	for !check() {
-		for i := range nodes {
-			for peers[i].Cardinality() < minPeer {
-				j := mrand.Intn(len(nodes))
-				if j == i || peers[j].Cardinality() >= maxPeer {
-					continue
-				}
-				peers[i].Add(j)
-				peers[j].Add(i)
-			}
-		}
-	}
+	density := float64(ctx.Int(utils.PeerNumFlag.Name)) / float64(len(nodes)-1)
+	maxDist := len(nodes) / 2
+	for i := 0; i < len(nodes); i++ {
+		for j := i + 1; j < len(nodes); j++ {
+			randNum := float64(rand.Intn(100)) / float64(100)
+			if randNum < getPij(density, 0.25, maxDist, i, j) {
+				nodes[i].Peers = append(nodes[i].Peers, nodes[j].Address)
+				nodes[j].Peers = append(nodes[j].Peers, nodes[i].Address)
 
-	for i := range nodes {
-		for peer := range peers[i].Iter() {
-			nodes[i].Peers = append(nodes[i].Peers, nodes[peer].Address)
+			}
 		}
 	}
 }
