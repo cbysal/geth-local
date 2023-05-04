@@ -263,6 +263,10 @@ func ethemu(ctx *cli.Context) error {
 					fmt.Println("txNum", txNum)
 					txNum++
 					time.Sleep(50 * time.Millisecond)
+					if txNum >= 5050 {
+						txLog.Sync()
+						os.Exit(0)
+					}
 				}
 			}
 		}()
@@ -311,8 +315,8 @@ func ethemu(ctx *cli.Context) error {
 					if counter == 0 {
 						break
 					}
-					time.Sleep(50 * time.Millisecond)
 				}
+				time.Sleep(500 * time.Millisecond)
 				curHeight++
 				sealer := sealers[rand.Intn(len(sealers))]
 				etherbase, err := sealer.Etherbase()
@@ -326,6 +330,10 @@ func ethemu(ctx *cli.Context) error {
 					log.Warn("Sealing time", "sealer", etherbase)
 					sealer.Miner().Work()
 					fmt.Println("blockNum", curHeight)
+				}
+				if curHeight >= 510 {
+					blockLog.Sync()
+					os.Exit(0)
 				}
 			}
 		}()
