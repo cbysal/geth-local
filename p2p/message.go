@@ -18,6 +18,7 @@ package p2p
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/emu"
 	"io"
 	"time"
 
@@ -98,6 +99,8 @@ func Send(w MsgWriter, msgcode uint64, data interface{}) error {
 	if err != nil {
 		return err
 	}
+	delay := time.Duration(emu.Global.Latency+uint64(size)*1000/emu.Global.Bandwidth) * time.Millisecond
+	time.Sleep(delay)
 	return w.WriteMsg(Msg{Code: msgcode, Size: uint32(size), Payload: r})
 }
 
