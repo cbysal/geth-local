@@ -25,7 +25,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"path"
 	"sort"
 	"time"
 
@@ -197,13 +196,12 @@ func ethemu(ctx *cli.Context) error {
 	nodes := make(map[common.Address]*node.Node)
 	var firstNode *node.Node
 	eths := make(map[common.Address]*eth.Ethereum)
-	os.MkdirAll("log", 0755)
-	blockLog, err := os.OpenFile(path.Join("log", "block.csv"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	blockLog, err := os.OpenFile("block.csv", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
 	defer blockLog.Close()
-	txLog, err := os.OpenFile(path.Join("log", "txs.csv"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	txLog, err := os.OpenFile("txs.csv", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
