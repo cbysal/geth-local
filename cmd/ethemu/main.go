@@ -230,6 +230,7 @@ func ethemu(ctx *cli.Context) error {
 			for _, node := range emu.Global.Nodes {
 				addrs = append(addrs, node.Address)
 			}
+			txNum := 0
 			for {
 				from := addrs[rand.Intn(len(addrs))]
 				to := from
@@ -256,7 +257,8 @@ func ethemu(ctx *cli.Context) error {
 					if counter == 0 {
 						break
 					}
-					fmt.Println("tx", counter)
+					fmt.Println("txNum", txNum)
+					txNum++
 					time.Sleep(time.Second)
 				}
 			}
@@ -269,6 +271,7 @@ func ethemu(ctx *cli.Context) error {
 			for addr := range emu.Global.Nodes {
 				sealers = append(sealers, eths[addr])
 			}
+			curHeight := 0
 			for {
 				sealer := sealers[rand.Intn(len(sealers))]
 				etherbase, err := sealer.Etherbase()
@@ -282,13 +285,8 @@ func ethemu(ctx *cli.Context) error {
 				case <-timer.C:
 					log.Warn("Sealing time", "sealer", etherbase)
 					sealer.Miner().Work()
-					go func() {
-						time.Sleep(time.Second)
-						header := sealer.APIBackend.CurrentHeader()
-						fmt.Println("blockNumber", header.Number, "trans", sealer.BlockChain().GetBlockByNumber(header.Number.Uint64()).Transactions().Len())
-						pending, queued := sealer.APIBackend.TxPool().Stats()
-						fmt.Println("pending", pending, "queued", queued)
-					}()
+					fmt.Println("blockNum", curHeight)
+					curHeight++
 				}
 			}
 		}()
@@ -310,7 +308,6 @@ func ethemu(ctx *cli.Context) error {
 					if counter == 0 {
 						break
 					}
-					fmt.Println("block", counter)
 					time.Sleep(time.Second)
 				}
 				curHeight++
@@ -325,13 +322,7 @@ func ethemu(ctx *cli.Context) error {
 				default:
 					log.Warn("Sealing time", "sealer", etherbase)
 					sealer.Miner().Work()
-					go func() {
-						time.Sleep(time.Second)
-						header := sealer.APIBackend.CurrentHeader()
-						fmt.Println("blockNumber", header.Number, "trans", sealer.BlockChain().GetBlockByNumber(header.Number.Uint64()).Transactions().Len())
-						pending, queued := sealer.APIBackend.TxPool().Stats()
-						fmt.Println("pending", pending, "queued", queued)
-					}()
+					fmt.Println("blockNum", curHeight)
 				}
 			}
 		}()
