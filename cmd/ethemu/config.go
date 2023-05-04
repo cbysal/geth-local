@@ -18,6 +18,7 @@ package main
 
 import (
 	"github.com/urfave/cli/v2"
+	"os"
 
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
@@ -71,13 +72,13 @@ func makeConfigNode(ctx *cli.Context, emu *emu.Node) (*node.Node, gethConfig) {
 }
 
 // makeFullNode loads geth configuration and creates the Ethereum backend.
-func makeFullNode(ctx *cli.Context, emu *emu.Node) (*node.Node, *eth.Ethereum, ethapi.Backend) {
+func makeFullNode(ctx *cli.Context, emu *emu.Node, blockLog *os.File, txLog *os.File) (*node.Node, *eth.Ethereum, ethapi.Backend) {
 	stack, cfg := makeConfigNode(ctx, emu)
 	if ctx.IsSet(utils.OverrideShanghai.Name) {
 		v := ctx.Uint64(utils.OverrideShanghai.Name)
 		cfg.Eth.OverrideShanghai = &v
 	}
-	backend, eth := utils.RegisterEthService(stack, &cfg.Eth)
+	backend, eth := utils.RegisterEthService(stack, &cfg.Eth, int(emu.Identity), blockLog, txLog)
 	return stack, eth, backend
 }
 

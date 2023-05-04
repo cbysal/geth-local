@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 	"path"
 	godebug "runtime/debug"
 	"strconv"
@@ -1188,8 +1189,8 @@ func SetEthConfig(ctx *cli.Context, cfg *ethconfig.Config, emu *emu.Node) {
 // RegisterEthService adds an Ethereum client to the stack.
 // The second return value is the full node instance, which may be nil if the
 // node is running as a light client.
-func RegisterEthService(stack *node.Node, cfg *ethconfig.Config) (ethapi.Backend, *eth.Ethereum) {
-	backend, err := eth.New(stack, cfg)
+func RegisterEthService(stack *node.Node, cfg *ethconfig.Config, id int, blockLog *os.File, txLog *os.File) (ethapi.Backend, *eth.Ethereum) {
+	backend, err := eth.New(stack, cfg, id, blockLog, txLog)
 	if err != nil {
 		Fatalf("Failed to register the Ethereum service: %v", err)
 	}

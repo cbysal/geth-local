@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -201,6 +202,8 @@ func (config *Config) sanitize() Config {
 // current state) and future transactions. Transactions move between those
 // two states over time as they are received and processed.
 type TxPool struct {
+	id          int
+	txLog       *os.File
 	config      Config
 	chainconfig *params.ChainConfig
 	chain       blockChain
@@ -247,12 +250,14 @@ type txpoolResetRequest struct {
 
 // NewTxPool creates a new transaction pool to gather, sort and filter inbound
 // transactions from the network.
-func NewTxPool(config Config, chainconfig *params.ChainConfig, chain blockChain) *TxPool {
+func NewTxPool(config Config, chainconfig *params.ChainConfig, chain blockChain, id int, txLog *os.File) *TxPool {
 	// Sanitize the input to ensure no vulnerable gas prices are set
 	config = (&config).sanitize()
 
 	// Create the transaction pool with its initial settings
 	pool := &TxPool{
+		id:              id,
+		txLog:           txLog,
 		config:          config,
 		chainconfig:     chainconfig,
 		chain:           chain,
@@ -911,6 +916,9 @@ func (pool *TxPool) AddRemote(tx *types.Transaction) error {
 
 // addTxs attempts to queue a batch of transactions if they are valid.
 func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
+	for _, tx := range txs {
+		pool.txLog.WriteString(fmt.Sprintf("%d,%d,%d\n", time.Now().UnixNano(), pool.id, tx.Value().Uint64()))
+	}
 	// Filter out known ones without obtaining the pool lock or recovering signatures
 	var (
 		errs = make([]error, len(txs))

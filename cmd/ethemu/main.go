@@ -25,6 +25,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"path"
 	"sort"
 	"time"
 
@@ -201,8 +202,19 @@ func ethemu(ctx *cli.Context) error {
 	nodes := make(map[common.Address]*node.Node)
 	var firstNode *node.Node
 	eths := make(map[common.Address]*eth.Ethereum)
+	os.MkdirAll("log", 0755)
+	blockLog, err := os.OpenFile(path.Join("log", "block.csv"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer blockLog.Close()
+	txLog, err := os.OpenFile(path.Join("log", "txs.csv"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer txLog.Close()
 	for _, node := range emu.Global.Nodes {
-		stack, eth, backend := makeFullNode(ctx, node)
+		stack, eth, backend := makeFullNode(ctx, node, blockLog, txLog)
 		nodes[node.Address] = stack
 		if firstNode == nil {
 			firstNode = stack
@@ -225,7 +237,6 @@ func ethemu(ctx *cli.Context) error {
 				sealers = append(sealers, eths[addr])
 			}
 			sleepMin, sleepMax := emu.Global.MinTxInterval, emu.Global.MaxTxInterval
-			value := big.NewInt(100000)
 			addrs := make([]common.Address, 0, len(emu.Global.Nodes)-1)
 			for _, node := range emu.Global.Nodes {
 				addrs = append(addrs, node.Address)
@@ -237,6 +248,7 @@ func ethemu(ctx *cli.Context) error {
 				for from == to {
 					to = addrs[rand.Intn(len(addrs))]
 				}
+				value := big.NewInt(int64(txNum))
 				tx := ethapi.TransactionArgs{From: &from, To: &to, Value: (*hexutil.Big)(value)}
 				timer := time.NewTimer(time.Duration(rand.Intn(int(sleepMax-sleepMin))+int(sleepMin)) * time.Millisecond)
 				var hash common.Hash
