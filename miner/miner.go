@@ -18,7 +18,6 @@
 package miner
 
 import (
-	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -190,9 +189,6 @@ func (miner *Miner) Hashrate() uint64 {
 }
 
 func (miner *Miner) SetExtra(extra []byte) error {
-	if uint64(len(extra)) > params.MaximumExtraDataSize {
-		return fmt.Errorf("extra exceeds max length. %d > %v", len(extra), params.MaximumExtraDataSize)
-	}
 	miner.worker.setExtra(extra)
 	return nil
 }

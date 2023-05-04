@@ -20,14 +20,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/big"
-	"math/rand"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"sort"
-	"time"
-
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
@@ -40,6 +32,13 @@ import (
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"math/big"
+	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"sort"
+	"time"
 
 	"github.com/urfave/cli/v2"
 )
@@ -214,7 +213,7 @@ func ethemu(ctx *cli.Context) error {
 		}
 		eths[node.Address] = eth
 
-		startNode(ctx, stack, backend, false, node)
+		startNode(ctx, stack, backend, false)
 	}
 
 	for _, node := range emu.Global.Nodes {
@@ -262,7 +261,6 @@ func ethemu(ctx *cli.Context) error {
 					}
 					fmt.Println("txNum", txNum)
 					txNum++
-					time.Sleep(50 * time.Millisecond)
 					if txNum >= 5050 {
 						txLog.Sync()
 						os.Exit(0)
@@ -280,14 +278,19 @@ func ethemu(ctx *cli.Context) error {
 			}
 			curHeight := uint64(0)
 			for {
-				time.Sleep(2 * time.Second)
-				var sealer *eth.Ethereum
 				for {
-					sealer = sealers[rand.Intn(len(sealers))]
-					if sealer.BlockChain().CurrentBlock().Number.Uint64() == curHeight {
+					counter := 0
+					for _, sealer := range sealers {
+						if sealer.BlockChain().CurrentBlock().Number.Uint64() != curHeight {
+							counter++
+						}
+					}
+					if counter == 0 {
 						break
 					}
 				}
+				time.Sleep(time.Second)
+				sealer := sealers[rand.Intn(len(sealers))]
 				etherbase, err := sealer.Etherbase()
 				if err != nil {
 					return
@@ -318,7 +321,7 @@ func ethemu(ctx *cli.Context) error {
 // startNode boots up the system node and all registered protocols, after which
 // it unlocks any requested accounts, and starts the RPC/IPC interfaces and the
 // miner.
-func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend, isConsole bool, emuNode *emu.Node) {
+func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend, isConsole bool) {
 	// Start up the node itself
 	utils.StartNode(ctx, stack, isConsole)
 

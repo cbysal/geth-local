@@ -99,9 +99,15 @@ func Send(w MsgWriter, msgcode uint64, data interface{}) error {
 	if err != nil {
 		return err
 	}
-	delay := time.Duration(emu.Global.Latency+uint64(size)/emu.Global.Bandwidth) * time.Millisecond
-	time.Sleep(delay)
-	return w.WriteMsg(Msg{Code: msgcode, Size: uint32(size), Payload: r})
+	go func() {
+		delay := time.Duration(emu.Global.Latency+uint64(size)/emu.Global.Bandwidth) * time.Millisecond
+		if msgcode == 6 || msgcode == 7 {
+			delay += time.Duration(emu.Global.BlockSize) * time.Millisecond
+		}
+		time.Sleep(delay)
+		w.WriteMsg(Msg{Code: msgcode, Size: uint32(size), Payload: r})
+	}()
+	return nil
 }
 
 // SendItems writes an RLP with the given code and data elements.

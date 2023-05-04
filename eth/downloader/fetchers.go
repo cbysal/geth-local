@@ -17,8 +17,6 @@
 package downloader
 
 import (
-	"time"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
@@ -37,21 +35,9 @@ func (d *Downloader) fetchHeadersByHash(p *peerConnection, hash common.Hash, amo
 	}
 	defer req.Close()
 
-	// Wait until the response arrives, the request is cancelled or times out
-	ttl := d.peers.rates.TargetTimeout()
-
-	timeoutTimer := time.NewTimer(ttl)
-	defer timeoutTimer.Stop()
-
 	select {
 	case <-d.cancelCh:
 		return nil, nil, errCanceled
-
-	case <-timeoutTimer.C:
-		// Header retrieval timed out, update the metrics
-		p.log.Debug("Header request timed out", "elapsed", ttl)
-
-		return nil, nil, errTimeout
 
 	case res := <-resCh:
 		// Don't reject the packet even if it turns out to be bad, downloader will
@@ -76,21 +62,9 @@ func (d *Downloader) fetchHeadersByNumber(p *peerConnection, number uint64, amou
 	}
 	defer req.Close()
 
-	// Wait until the response arrives, the request is cancelled or times out
-	ttl := d.peers.rates.TargetTimeout()
-
-	timeoutTimer := time.NewTimer(ttl)
-	defer timeoutTimer.Stop()
-
 	select {
 	case <-d.cancelCh:
 		return nil, nil, errCanceled
-
-	case <-timeoutTimer.C:
-		// Header retrieval timed out, update the metrics
-		p.log.Debug("Header request timed out", "elapsed", ttl)
-
-		return nil, nil, errTimeout
 
 	case res := <-resCh:
 		// Don't reject the packet even if it turns out to be bad, downloader will

@@ -44,8 +44,6 @@ type Database struct {
 func New(file string, cache int, handles int, namespace string, readonly bool) (*Database, error) { // Set default options
 	// Open the db and recover any potential corruptions
 	option := badger.DefaultOptions(file)
-	option.MemTableSize = 8 << 20
-	option.BlockCacheSize = 32 << 20
 	option.Logger = nil
 	db, err := badger.Open(option)
 	if err != nil {
