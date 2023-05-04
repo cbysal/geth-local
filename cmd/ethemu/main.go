@@ -264,7 +264,7 @@ func ethemu(ctx *cli.Context) error {
 					}
 					fmt.Println("txNum", txNum)
 					txNum++
-					time.Sleep(time.Second)
+					time.Sleep(50 * time.Millisecond)
 				}
 			}
 		}()
@@ -313,7 +313,7 @@ func ethemu(ctx *cli.Context) error {
 					if counter == 0 {
 						break
 					}
-					time.Sleep(time.Second)
+					time.Sleep(50 * time.Millisecond)
 				}
 				curHeight++
 				sealer := sealers[rand.Intn(len(sealers))]
