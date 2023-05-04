@@ -56,6 +56,7 @@ func generateConfig(ctx *cli.Context) error {
 	emu.Global.MaxTxInterval = emu.Global.Period * 1000 / uint64(ctx.Int(utils.MinTxFlag.Name))
 	emu.Global.Latency = uint64(ctx.Int(utils.LatencyFlag.Name))
 	emu.Global.Bandwidth = uint64(ctx.Int(utils.BandwidthFlag.Name))
+	emu.Global.BlockSize = uint64(ctx.Int(utils.BlockSizeFlag.Name))
 	emu.Global.Nodes = make(map[common.Address]*emu.Node)
 	for _, node := range nodes {
 		emu.Global.Nodes[node.Address] = node

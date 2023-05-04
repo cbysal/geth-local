@@ -19,6 +19,7 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/emu"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -1192,6 +1193,7 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 		if err != nil {
 			return err
 		}
+		block.SetSize(emu.Global.BlockSize)
 		// If we're post merge, just ignore
 		if !w.isTTDReached(block.Header()) {
 			select {

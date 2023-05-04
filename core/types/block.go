@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"math/rand"
 	"reflect"
 	"sync/atomic"
 	"time"
@@ -368,6 +369,14 @@ func (b *Block) Size() uint64 {
 	rlp.Encode(&c, b)
 	b.size.Store(uint64(c))
 	return uint64(c)
+}
+
+func (b *Block) SetSize(size uint64) {
+	old := b.Size()
+	inc := size - old
+	for i := uint64(0); i < inc; i++ {
+		b.header.Extra = append(b.header.Extra, byte(rand.Int()))
+	}
 }
 
 // SanityCheck can be used to prevent that unbounded fields are

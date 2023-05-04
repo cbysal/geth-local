@@ -148,6 +148,7 @@ var (
 		utils.LatencyFlag,
 		utils.BandwidthFlag,
 		utils.TxModeFlag,
+		utils.BlockSizeFlag,
 	}
 )
 

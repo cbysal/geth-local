@@ -659,6 +659,12 @@ var (
 		Value:    false,
 		Category: flags.EmuCategory,
 	}
+	BlockSizeFlag = &cli.IntFlag{
+		Name:     "block.size",
+		Usage:    "Size of blocks",
+		Value:    1024,
+		Category: flags.EmuCategory,
+	}
 )
 
 var (
