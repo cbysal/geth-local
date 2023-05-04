@@ -654,6 +654,11 @@ var (
 		Value:    4096,
 		Category: flags.EmuCategory,
 	}
+	TxModeFlag = &cli.BoolFlag{
+		Name:     "txmode",
+		Value:    false,
+		Category: flags.EmuCategory,
+	}
 )
 
 var (

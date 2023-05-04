@@ -147,6 +147,7 @@ var (
 		utils.BlockTimeFlag,
 		utils.LatencyFlag,
 		utils.BandwidthFlag,
+		utils.TxModeFlag,
 	}
 )
 
@@ -216,76 +217,124 @@ func ethemu(ctx *cli.Context) error {
 		}
 	}
 
-	go func() {
-		sleepMin, sleepMax := emu.Global.MinTxInterval, emu.Global.MaxTxInterval
-		value := big.NewInt(100000)
-		addrs := make([]common.Address, 0, len(emu.Global.Nodes)-1)
-		for _, node := range emu.Global.Nodes {
-			addrs = append(addrs, node.Address)
-		}
-		for {
-			from := addrs[rand.Intn(len(addrs))]
-			to := from
-			for from == to {
-				to = addrs[rand.Intn(len(addrs))]
+	if ctx.Bool(utils.TxModeFlag.Name) {
+		go func() {
+			sealers := make([]*eth.Ethereum, 0)
+			for addr := range emu.Global.Nodes {
+				sealers = append(sealers, eths[addr])
 			}
-			tx := ethapi.TransactionArgs{From: &from, To: &to, Value: (*hexutil.Big)(value)}
-			timer := time.NewTimer(time.Duration(rand.Intn(int(sleepMax-sleepMin))+int(sleepMin)) * time.Millisecond)
-			select {
-			case <-stopSig:
-				return
-			case <-timer.C:
-				eths[from].SendTransaction(context.Background(), tx)
+			sleepMin, sleepMax := emu.Global.MinTxInterval, emu.Global.MaxTxInterval
+			value := big.NewInt(100000)
+			addrs := make([]common.Address, 0, len(emu.Global.Nodes)-1)
+			for _, node := range emu.Global.Nodes {
+				addrs = append(addrs, node.Address)
 			}
-		}
-	}()
-
-	go func() {
-		sealers := make([]*eth.Ethereum, 0)
-		for addr := range emu.Global.Nodes {
-			sealers = append(sealers, eths[addr])
-		}
-		curHeight := uint64(0)
-		heights := make([]uint64, len(emu.Global.Nodes))
-		for {
 			for {
-				for i, sealer := range sealers {
-					heights[i] = sealer.BlockChain().CurrentBlock().Number.Uint64()
+				from := addrs[rand.Intn(len(addrs))]
+				to := from
+				for from == to {
+					to = addrs[rand.Intn(len(addrs))]
 				}
-				counter := 0
-				for _, height := range heights {
-					if height != curHeight {
-						counter++
+				tx := ethapi.TransactionArgs{From: &from, To: &to, Value: (*hexutil.Big)(value)}
+				timer := time.NewTimer(time.Duration(rand.Intn(int(sleepMax-sleepMin))+int(sleepMin)) * time.Millisecond)
+				var hash common.Hash
+				select {
+				case <-stopSig:
+					return
+				case <-timer.C:
+					hash, _ = eths[from].SendTransaction(context.Background(), tx)
+				}
+				for {
+					counter := 0
+					for _, sealer := range sealers {
+						tx := sealer.TxPool().Get(hash)
+						if tx == nil {
+							counter++
+						}
 					}
-				}
-				if counter == 0 {
-					break
-				}
-				fmt.Println(counter)
-				time.Sleep(time.Second)
-			}
-			curHeight++
-			sealer := sealers[rand.Intn(len(sealers))]
-			etherbase, err := sealer.Etherbase()
-			if err != nil {
-				return
-			}
-			select {
-			case <-stopSig:
-				return
-			default:
-				log.Warn("Sealing time", "sealer", etherbase)
-				sealer.Miner().Work()
-				go func() {
+					if counter == 0 {
+						break
+					}
+					fmt.Println("tx", counter)
 					time.Sleep(time.Second)
-					header := sealer.APIBackend.CurrentHeader()
-					fmt.Println("blockNumber", header.Number, "trans", sealer.BlockChain().GetBlockByNumber(header.Number.Uint64()).Transactions().Len())
-					pending, queued := sealer.APIBackend.TxPool().Stats()
-					fmt.Println("pending", pending, "queued", queued)
-				}()
+				}
 			}
-		}
-	}()
+		}()
+	}
+
+	if ctx.Bool(utils.TxModeFlag.Name) {
+		go func() {
+			sealers := make([]*eth.Ethereum, 0)
+			for addr := range emu.Global.Nodes {
+				sealers = append(sealers, eths[addr])
+			}
+			for {
+				sealer := sealers[rand.Intn(len(sealers))]
+				etherbase, err := sealer.Etherbase()
+				if err != nil {
+					return
+				}
+				timer := time.NewTimer(15 * time.Second)
+				select {
+				case <-stopSig:
+					return
+				case <-timer.C:
+					log.Warn("Sealing time", "sealer", etherbase)
+					sealer.Miner().Work()
+					go func() {
+						time.Sleep(time.Second)
+						header := sealer.APIBackend.CurrentHeader()
+						fmt.Println("blockNumber", header.Number, "trans", sealer.BlockChain().GetBlockByNumber(header.Number.Uint64()).Transactions().Len())
+						pending, queued := sealer.APIBackend.TxPool().Stats()
+						fmt.Println("pending", pending, "queued", queued)
+					}()
+				}
+			}
+		}()
+	} else {
+		go func() {
+			sealers := make([]*eth.Ethereum, 0)
+			for addr := range emu.Global.Nodes {
+				sealers = append(sealers, eths[addr])
+			}
+			curHeight := uint64(0)
+			for {
+				for {
+					counter := 0
+					for _, sealer := range sealers {
+						if sealer.BlockChain().CurrentBlock().Number.Uint64() != curHeight {
+							counter++
+						}
+					}
+					if counter == 0 {
+						break
+					}
+					fmt.Println("block", counter)
+					time.Sleep(time.Second)
+				}
+				curHeight++
+				sealer := sealers[rand.Intn(len(sealers))]
+				etherbase, err := sealer.Etherbase()
+				if err != nil {
+					return
+				}
+				select {
+				case <-stopSig:
+					return
+				default:
+					log.Warn("Sealing time", "sealer", etherbase)
+					sealer.Miner().Work()
+					go func() {
+						time.Sleep(time.Second)
+						header := sealer.APIBackend.CurrentHeader()
+						fmt.Println("blockNumber", header.Number, "trans", sealer.BlockChain().GetBlockByNumber(header.Number.Uint64()).Transactions().Len())
+						pending, queued := sealer.APIBackend.TxPool().Stats()
+						fmt.Println("pending", pending, "queued", queued)
+					}()
+				}
+			}
+		}()
+	}
 
 	for _, node := range nodes {
 		node.Wait()
