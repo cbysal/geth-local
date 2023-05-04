@@ -18,6 +18,7 @@ package main
 
 import (
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/cmd/utils"
@@ -77,24 +78,30 @@ func initGenesis(ctx *cli.Context) error {
 		}
 	}
 
+	var wg sync.WaitGroup
 	for _, node := range emu.Global.Nodes {
-		// Open and initialise both full and light databases
-		stack, _ := makeConfigNode(ctx, node)
-		defer stack.Close()
+		wg.Add(1)
+		go func(node *emu.Node) {
+			// Open and initialise both full and light databases
+			stack, _ := makeConfigNode(ctx, node)
+			defer stack.Close()
 
-		chaindb, err := stack.OpenDatabase("chaindata", 0, 0, "", false)
-		if err != nil {
-			utils.Fatalf("Failed to open database: %v", err)
-		}
-		triedb := trie.NewDatabaseWithConfig(chaindb, &trie.Config{
-			Preimages: ctx.Bool(utils.CachePreimagesFlag.Name),
-		})
-		_, hash, err := core.SetupGenesisBlock(chaindb, triedb, genesis)
-		if err != nil {
-			utils.Fatalf("Failed to write genesis block: %v", err)
-		}
-		chaindb.Close()
-		log.Info("Successfully wrote genesis state", "hash", hash)
+			chaindb, err := stack.OpenDatabase("chaindata", 0, 0, "", false)
+			if err != nil {
+				utils.Fatalf("Failed to open database: %v", err)
+			}
+			triedb := trie.NewDatabaseWithConfig(chaindb, &trie.Config{
+				Preimages: ctx.Bool(utils.CachePreimagesFlag.Name),
+			})
+			_, hash, err := core.SetupGenesisBlock(chaindb, triedb, genesis)
+			if err != nil {
+				utils.Fatalf("Failed to write genesis block: %v", err)
+			}
+			chaindb.Close()
+			log.Info("Successfully wrote genesis state", "hash", hash)
+			wg.Done()
+		}(node)
 	}
+	wg.Wait()
 	return nil
 }
