@@ -272,32 +272,7 @@ func ethemu(ctx *cli.Context) error {
 		}()
 	}
 
-	if ctx.Bool(utils.TxModeFlag.Name) {
-		go func() {
-			sealers := make([]*eth.Ethereum, 0)
-			for addr := range emu.Global.Nodes {
-				sealers = append(sealers, eths[addr])
-			}
-			curHeight := 0
-			for {
-				sealer := sealers[rand.Intn(len(sealers))]
-				etherbase, err := sealer.Etherbase()
-				if err != nil {
-					return
-				}
-				timer := time.NewTimer(15 * time.Second)
-				select {
-				case <-stopSig:
-					return
-				case <-timer.C:
-					log.Warn("Sealing time", "sealer", etherbase)
-					sealer.Miner().Work()
-					fmt.Println("blockNum", curHeight)
-					curHeight++
-				}
-			}
-		}()
-	} else {
+	if !ctx.Bool(utils.TxModeFlag.Name) {
 		go func() {
 			sealers := make([]*eth.Ethereum, 0)
 			for addr := range emu.Global.Nodes {
@@ -305,20 +280,14 @@ func ethemu(ctx *cli.Context) error {
 			}
 			curHeight := uint64(0)
 			for {
+				time.Sleep(2 * time.Second)
+				var sealer *eth.Ethereum
 				for {
-					counter := 0
-					for _, sealer := range sealers {
-						if sealer.BlockChain().CurrentBlock().Number.Uint64() != curHeight {
-							counter++
-						}
-					}
-					if counter == 0 {
+					sealer = sealers[rand.Intn(len(sealers))]
+					if sealer.BlockChain().CurrentBlock().Number.Uint64() == curHeight {
 						break
 					}
 				}
-				time.Sleep(500 * time.Millisecond)
-				curHeight++
-				sealer := sealers[rand.Intn(len(sealers))]
 				etherbase, err := sealer.Etherbase()
 				if err != nil {
 					return
@@ -331,7 +300,8 @@ func ethemu(ctx *cli.Context) error {
 					sealer.Miner().Work()
 					fmt.Println("blockNum", curHeight)
 				}
-				if curHeight >= 510 {
+				curHeight++
+				if curHeight >= 110 {
 					blockLog.Sync()
 					os.Exit(0)
 				}
