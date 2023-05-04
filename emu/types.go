@@ -7,6 +7,5 @@ import (
 type Node struct {
 	Identity uint64
 	Address  common.Address
-	IsMiner  bool
 	Peers    []common.Address
 }

@@ -642,6 +642,18 @@ var (
 		Value:    3,
 		Category: flags.EmuCategory,
 	}
+	LatencyFlag = &cli.IntFlag{
+		Name:     "latency",
+		Usage:    "Latency of the network",
+		Value:    50,
+		Category: flags.EmuCategory,
+	}
+	BandwidthFlag = &cli.IntFlag{
+		Name:     "bandwidth",
+		Usage:    "Bandwidth of the network",
+		Value:    4096,
+		Category: flags.EmuCategory,
+	}
 )
 
 var (

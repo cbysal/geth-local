@@ -19,6 +19,8 @@ type Config struct {
 	MinTxInterval uint64
 	MaxTxInterval uint64
 	Nodes         map[common.Address]*Node
+	Latency       uint64
+	Bandwidth     uint64
 }
 
 var Global Config

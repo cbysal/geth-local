@@ -145,6 +145,8 @@ var (
 		utils.MinTxFlag,
 		utils.MaxTxFlag,
 		utils.BlockTimeFlag,
+		utils.LatencyFlag,
+		utils.BandwidthFlag,
 	}
 )
 
@@ -219,9 +221,7 @@ func ethemu(ctx *cli.Context) error {
 		value := big.NewInt(100000)
 		addrs := make([]common.Address, 0, len(emu.Global.Nodes)-1)
 		for _, node := range emu.Global.Nodes {
-			if !node.IsMiner {
-				addrs = append(addrs, node.Address)
-			}
+			addrs = append(addrs, node.Address)
 		}
 		for {
 			from := addrs[rand.Intn(len(addrs))]
@@ -242,22 +242,38 @@ func ethemu(ctx *cli.Context) error {
 
 	go func() {
 		sealers := make([]*eth.Ethereum, 0)
-		for addr, node := range emu.Global.Nodes {
-			if node.IsMiner {
-				sealers = append(sealers, eths[addr])
-			}
+		for addr := range emu.Global.Nodes {
+			sealers = append(sealers, eths[addr])
 		}
+		curHeight := uint64(0)
+		heights := make([]uint64, len(emu.Global.Nodes))
 		for {
+			for {
+				for i, sealer := range sealers {
+					heights[i] = sealer.BlockChain().CurrentBlock().Number.Uint64()
+				}
+				counter := 0
+				for _, height := range heights {
+					if height != curHeight {
+						counter++
+					}
+				}
+				if counter == 0 {
+					break
+				}
+				fmt.Println(counter)
+				time.Sleep(time.Second)
+			}
+			curHeight++
 			sealer := sealers[rand.Intn(len(sealers))]
 			etherbase, err := sealer.Etherbase()
 			if err != nil {
 				return
 			}
-			timer := time.NewTimer(time.Duration(emu.Global.Period) * time.Second)
 			select {
 			case <-stopSig:
 				return
-			case <-timer.C:
+			default:
 				log.Warn("Sealing time", "sealer", etherbase)
 				sealer.Miner().Work()
 				go func() {
@@ -291,24 +307,21 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend, isCon
 	events := make(chan accounts.WalletEvent, 16)
 	stack.AccountManager().Subscribe(events)
 
-	// Start auxiliary services if enabled
-	if ctx.Bool(utils.MiningEnabledFlag.Name) || emuNode.IsMiner {
-		// Mining only makes sense if a full Ethereum node is running
-		if ctx.String(utils.SyncModeFlag.Name) == "light" {
-			utils.Fatalf("Light clients do not support mining")
-		}
-		ethBackend, ok := backend.(*eth.EthAPIBackend)
-		if !ok {
-			utils.Fatalf("Ethereum service not running")
-		}
-		// Set the gas price to the limits from the CLI and start mining
-		gasprice := flags.GlobalBig(ctx, utils.MinerGasPriceFlag.Name)
-		ethBackend.TxPool().SetGasPrice(gasprice)
-		// start mining
-		threads := ctx.Int(utils.MinerThreadsFlag.Name)
-		if err := ethBackend.StartMining(threads); err != nil {
-			utils.Fatalf("Failed to start mining: %v", err)
-		}
+	// Mining only makes sense if a full Ethereum node is running
+	if ctx.String(utils.SyncModeFlag.Name) == "light" {
+		utils.Fatalf("Light clients do not support mining")
+	}
+	ethBackend, ok := backend.(*eth.EthAPIBackend)
+	if !ok {
+		utils.Fatalf("Ethereum service not running")
+	}
+	// Set the gas price to the limits from the CLI and start mining
+	gasprice := flags.GlobalBig(ctx, utils.MinerGasPriceFlag.Name)
+	ethBackend.TxPool().SetGasPrice(gasprice)
+	// start mining
+	threads := ctx.Int(utils.MinerThreadsFlag.Name)
+	if err := ethBackend.StartMining(threads); err != nil {
+		utils.Fatalf("Failed to start mining: %v", err)
 	}
 }
 
