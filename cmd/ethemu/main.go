@@ -20,6 +20,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"sort"
+	"time"
+
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
@@ -32,13 +40,6 @@ import (
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"math/big"
-	"math/rand"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"sort"
-	"time"
 
 	"github.com/urfave/cli/v2"
 )

@@ -18,6 +18,7 @@ package eth
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/emu"
 	"math/big"
 	"time"
 
@@ -231,6 +232,12 @@ func handleMessage(backend Backend, peer *Peer) error {
 	if peer.Version() >= ETH68 {
 		handlers = eth68
 	}
+
+	delay := time.Duration(emu.Global.Latency+uint64(msg.Size)/emu.Global.Bandwidth) * time.Millisecond
+	if msg.Code == NewBlockMsg || msg.Code == BlockBodiesMsg {
+		delay += time.Duration(emu.Global.BlockSize/emu.Global.Bandwidth) * time.Millisecond
+	}
+	time.Sleep(delay)
 
 	if handler := handlers[msg.Code]; handler != nil {
 		return handler(backend, msg, peer)

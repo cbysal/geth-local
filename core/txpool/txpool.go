@@ -917,7 +917,7 @@ func (pool *TxPool) AddRemote(tx *types.Transaction) error {
 // addTxs attempts to queue a batch of transactions if they are valid.
 func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 	for _, tx := range txs {
-		pool.txLog.WriteString(fmt.Sprintf("%d,%d,%d\n", time.Now().UnixNano(), pool.id, tx.Value().Uint64()))
+		pool.txLog.WriteString(fmt.Sprintf("%d,%d,%d\n", time.Now().UnixMilli(), pool.id, tx.Value().Uint64()))
 	}
 	// Filter out known ones without obtaining the pool lock or recovering signatures
 	var (
